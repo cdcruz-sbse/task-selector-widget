@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Task Selector Widget — Mock-First Prototype</title>
+<!--
+  ============================================================================
+  Staffbase Task Selector Widget — MOCK-FIRST PROTOTYPE (zero build step)
+  ============================================================================
+  Purpose: let you SEE and PLAY WITH the query-driven selector behavior before
+  we scaffold the real @staffbase/create-widget bundle and wire live Backstage
+  Tasks API calls.
+
+  How to read this file (top to bottom):
+    1. MOCK DATA           – fake Backstage tasks/lists/categories.
+    2. DATA SOURCE ADAPTER – the ONE seam every read/write goes through.
+                             mockDataSource now; liveDataSource (real Tasks API)
+                             drops in later behind the SAME interface.
+    3. CONFIG / QUERY      – the "Studio input parameters" the admin sets.
+    4. RENDER              – left = admin config (Studio); right = what the
+                             employee sees inside the News post.
+
+  Nothing here calls the network. Every mock method is annotated with the REAL
+  endpoint it will map to (from your Backstage tasks-api PDF), so the live
+  swap is mechanical.
+  ============================================================================
+-->
+<style>
+  :root {
+    --brand: #da2e32; --brand-rgb: 218,46,50;
+    --success: #2E7D4A; --error: #C41E3A;
+    --dark: #1A1A1A; --gray: #6b7280; --gray-lt: #9ca3af; --border: #e5e7eb;
+    --bg: #f4f5f7; --r-sm: 6px; --r-md: 10px; --r-lg: 14px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--dark); padding: 20px; line-height: 1.45; }
+  .wrap { max-width: 1180px; margin: 0 auto; }
+  .page-head { margin-bottom: 16px; }
+  .page-head h1 { font-size: 20px; font-weight: 800; letter-spacing: -.2px; }
+  .page-head p { font-size: 13px; color: var(--gray); margin-top: 4px; max-width: 760px; }
+  .badge-mock { display:inline-block; font-size:10px; font-weight:800; letter-spacing:.6px;
+    text-transform:uppercase; color:#fff; background:var(--brand); padding:3px 8px; border-radius:999px; vertical-align:middle; margin-left:8px; }
+
+  .cols { display: grid; grid-template-columns: 380px 1fr; gap: 18px; align-items: start; }
+  @media (max-width: 900px) { .cols { grid-template-columns: 1fr; } }
+
+  .panel { background:#fff; border:1px solid var(--border); border-radius: var(--r-lg);
+    box-shadow: 0 1px 3px rgba(0,0,0,.05); overflow: hidden; }
+  .panel-head { padding: 13px 16px; border-bottom: 1px solid var(--border); display:flex; align-items:center; gap:8px; }
+  .panel-head .dot { width:9px; height:9px; border-radius:50%; background:var(--brand); flex-shrink:0; }
+  .panel-head h2 { font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing:.5px; }
+  .panel-head .sub { font-size: 11px; color: var(--gray-lt); font-weight:600; margin-left:auto; }
+  .panel-body { padding: 16px; }
+
+  /* ---- Studio config form (mimics JSON-schema form fields) ---- */
+  .field { margin-bottom: 14px; }
+  .field:last-child { margin-bottom: 0; }
+  .field label { display:block; font-size: 12px; font-weight: 700; color: var(--dark); margin-bottom: 5px; }
+  .field .help { font-size: 11px; color: var(--gray-lt); font-weight: 500; margin-top: 4px; }
+  .field select, .field input[type=text], .field input[type=number] {
+    width: 100%; font: inherit; font-size: 13px; padding: 8px 10px; border: 1.5px solid var(--border);
+    border-radius: var(--r-md); background: #fafafa; color: var(--dark); transition: border-color .15s, background .15s; }
+  .field select:focus, .field input:focus { outline: none; border-color: var(--brand); background: #fff; }
+  .seg { display:flex; gap:6px; }
+  .seg button { flex:1; font: inherit; font-size:12px; font-weight:700; padding:7px 8px; border:1.5px solid var(--border);
+    background:#fafafa; color:var(--gray); border-radius: var(--r-md); cursor:pointer; transition: all .15s; }
+  .seg button.on { border-color: var(--brand); background: rgba(var(--brand-rgb),.08); color: var(--brand); }
+  .chk { display:flex; align-items:center; gap:9px; cursor:pointer; }
+  .chk input { width:16px; height:16px; accent-color: var(--brand); }
+  .chk span { font-size:13px; font-weight:600; }
+  .config-note { margin-top:14px; padding:10px 12px; background:rgba(var(--brand-rgb),.05); border:1px solid rgba(var(--brand-rgb),.15);
+    border-radius: var(--r-md); font-size:11px; color:#7a2b2d; line-height:1.5; }
+  .config-note b { font-weight:800; }
+
+  /* ---- Employee checklist (matches Staffbase Simple Tasks styling) ---- */
+  .news-frame { background:#fff; }
+  .news-head { padding: 4px 4px 12px; }
+  .news-title { font-size: 16px; font-weight: 800; }
+  .news-count { font-size: 12px; color: var(--gray-lt); font-weight:600; margin-top:2px; }
+  .list { display:flex; flex-direction:column; gap:8px; }
+  .row { display:flex; align-items:flex-start; gap:12px; padding:11px 13px; background:#fff;
+    border:1px solid var(--border); border-radius: var(--r-md); box-shadow:0 1px 3px rgba(0,0,0,.05);
+    transition: opacity .25s, transform .15s, box-shadow .15s; cursor:pointer; }
+  .row:hover { box-shadow:0 4px 14px rgba(0,0,0,.09); transform: translateY(-1px); }
+  .row.done { opacity:.62; }
+  .check { width:22px; height:22px; border-radius:50%; border:2px solid #d1d5db; background:#fff;
+    cursor:pointer; display:flex; align-items:center; justify-content:center; transition: all .15s; flex-shrink:0; padding:0; }
+  .check:hover { border-color: var(--brand); background: rgba(var(--brand-rgb),.06); }
+  .check.checked { background: var(--success); border-color: var(--success); }
+  .check svg { display:none; }
+  .check.checked svg { display:block; }
+  .row-main { flex:1; min-width:0; padding-top:1px; }
+  .row-title { font-size:14px; font-weight:600; line-height:1.45; position:relative; display:inline; word-break:break-word; }
+  .row.done .row-title { color: var(--gray); text-decoration: line-through; }
+  .row-meta { display:flex; flex-wrap:wrap; align-items:center; gap:7px; margin-top:6px; }
+  .b { display:inline-flex; align-items:center; gap:4px; padding:2px 7px; border-radius:4px; font-size:9.5px;
+    font-weight:800; letter-spacing:.4px; text-transform:uppercase; line-height:1.5; }
+  .b-cat { color:#fff; }
+  .b-recur { background: rgba(var(--brand-rgb),.1); color: var(--brand); }
+  .b-due { color: var(--gray-lt); font-weight:600; text-transform:none; letter-spacing:0; font-size:11px; }
+  .b-due.overdue { color: var(--error); font-weight:800; }
+  .b-prio { border:1.5px solid currentColor; font-size:9.5px; }
+  .empty { padding: 30px 12px; text-align:center; color: var(--gray-lt); font-size:13px; }
+  .empty svg { display:block; margin: 0 auto 10px; opacity:.5; }
+
+  /* live query echo */
+  .query-echo { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:11px; color:#334155;
+    background:#0f172a08; border:1px solid var(--border); border-radius: var(--r-sm); padding:8px 10px; margin-top:6px;
+    white-space:pre-wrap; word-break:break-word; }
+  .toast { position:fixed; bottom:18px; left:50%; transform:translateX(-50%) translateY(20px); opacity:0;
+    background:#0f172a; color:#fff; font-size:12.5px; font-weight:600; padding:9px 14px; border-radius:999px;
+    box-shadow:0 6px 24px rgba(0,0,0,.25); transition: all .25s; pointer-events:none; z-index:50; }
+  .toast.show { transform:translateX(-50%) translateY(0); opacity:1; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="page-head">
+    <h1>Task Selector Widget <span class="badge-mock">Mock prototype</span></h1>
+    <p>Left = the <b>Studio config</b> an admin fills in (these become the widget's input parameters).
+       Right = what an <b>employee sees</b> in the News post. The checklist is <b>query-driven</b>: change any
+       filter and the widget re-queries the (mock) Tasks API live. Check tasks off to see the write-back.</p>
+  </div>
+
+  <div class="cols">
+    <!-- ============ LEFT: STUDIO CONFIG (the query) ============ -->
+    <div class="panel">
+      <div class="panel-head"><span class="dot"></span><h2>Studio configuration</h2><span class="sub">admin view</span></div>
+      <div class="panel-body">
+        <div class="field">
+          <label>Task list</label>
+          <select id="f-list"></select>
+          <div class="help">GET /tasks/{installationId}/lists</div>
+        </div>
+        <div class="field">
+          <label>Category / type</label>
+          <select id="f-cat"></select>
+          <div class="help">Filter by task type (storetask, compliance, safety, …)</div>
+        </div>
+        <div class="field">
+          <label>Recurrence</label>
+          <div class="seg" id="f-recur">
+            <button data-v="all" class="on">All</button>
+            <button data-v="oneoff">One-off</button>
+            <button data-v="recurring">Recurring</button>
+          </div>
+          <div class="help">One-off vs recurring tasks</div>
+        </div>
+        <div class="field">
+          <label>Keyword search</label>
+          <input type="text" id="f-q" placeholder="e.g. safety, open, freezer…" />
+          <div class="help">GET /tasks/{installationId}/task/search?q=…</div>
+        </div>
+        <div class="field">
+          <label>Max items</label>
+          <input type="number" id="f-max" value="20" min="1" max="100" />
+        </div>
+        <div class="field">
+          <label>Sort by</label>
+          <select id="f-sort">
+            <option value="due">Due date</option>
+            <option value="priority">Priority</option>
+            <option value="title">Title (A–Z)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label class="chk"><input type="checkbox" id="f-showdone" /> <span>Show completed tasks</span></label>
+        </div>
+        <div class="field">
+          <label class="chk"><input type="checkbox" id="f-allowtoggle" checked /> <span>Allow employees to check off (write-back)</span></label>
+        </div>
+
+        <div class="config-note">
+          <b>Why query-driven?</b> Staffbase's Studio config form can't host a live task picker.
+          Instead the admin defines these filters once; the widget resolves them against the Tasks API
+          at render time — so the checklist stays current as tasks are added, completed, or recur.
+        </div>
+        <div class="query-echo" id="query-echo"></div>
+      </div>
+    </div>
+
+    <!-- ============ RIGHT: EMPLOYEE CHECKLIST (News post) ============ -->
+    <div class="panel news-frame">
+      <div class="panel-head"><span class="dot"></span><h2>News post preview</h2><span class="sub">employee view</span></div>
+      <div class="panel-body">
+        <div class="news-head">
+          <div class="news-title" id="news-title">Your store checklist</div>
+          <div class="news-count" id="news-count"></div>
+        </div>
+        <div class="list" id="list"></div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ==========================================================================
+   1. MOCK DATA  (stands in for Backstage Tasks API responses)
+   ========================================================================== */
+const INSTALLATION_ID = "store-demo-001"; // the "installation" (store) id
+
+// Category color map mirrors your Simple Tasks widget's TYPE_COLORS.
+const CATEGORY_COLORS = {
+  storetask: "#da2e32", compliance: "#8B4513", maintenance: "#2E7D4A",
+  training: "#4A90A4", safety: "#D97706", merchandising: "#7C3AED", inventory: "#0369A1",
+};
+
+// GET /tasks/{installationId}/lists  →  TaskList[]
+const MOCK_LISTS = [
+  { id: "list-open",  title: "Store Opening Checklist" },
+  { id: "list-comp",  title: "Compliance & Safety" },
+  { id: "list-merch", title: "Weekly Merchandising" },
+];
+
+// Task shape mirrors your real model: status OPEN/CLOSED, priority Priority_1..3,
+// taskType (category), isRecurring, listId, dueDate, groupIds.
+function daysFromNow(n){ const d=new Date(); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); }
+const MOCK_TASKS = [
+  { id:"t01", listId:"list-open",  title:"Unlock and disarm the store",              status:"OPEN",   priority:"Priority_1", taskType:"storetask",     isRecurring:true,  dueDate:daysFromNow(0) },
+  { id:"t02", listId:"list-open",  title:"Count and set the cash drawer",            status:"OPEN",   priority:"Priority_1", taskType:"storetask",     isRecurring:true,  dueDate:daysFromNow(0) },
+  { id:"t03", listId:"list-open",  title:"Power on POS terminals",                   status:"CLOSED", priority:"Priority_2", taskType:"storetask",     isRecurring:true,  dueDate:daysFromNow(0) },
+  { id:"t04", listId:"list-comp",  title:"Check walk-in freezer temperature log",    status:"OPEN",   priority:"Priority_1", taskType:"safety",        isRecurring:true,  dueDate:daysFromNow(0) },
+  { id:"t05", listId:"list-comp",  title:"Fire exit inspection",                     status:"OPEN",   priority:"Priority_2", taskType:"compliance",    isRecurring:true,  dueDate:daysFromNow(-1) },
+  { id:"t06", listId:"list-comp",  title:"Complete monthly food-safety training",    status:"OPEN",   priority:"Priority_2", taskType:"training",      isRecurring:false, dueDate:daysFromNow(6) },
+  { id:"t07", listId:"list-comp",  title:"Replace expired first-aid supplies",       status:"OPEN",   priority:"Priority_3", taskType:"maintenance",   isRecurring:false, dueDate:daysFromNow(3) },
+  { id:"t08", listId:"list-merch", title:"Set up new seasonal end-cap display",      status:"OPEN",   priority:"Priority_2", taskType:"merchandising", isRecurring:false, dueDate:daysFromNow(2) },
+  { id:"t09", listId:"list-merch", title:"Rotate perishable stock (FIFO)",           status:"OPEN",   priority:"Priority_1", taskType:"inventory",     isRecurring:true,  dueDate:daysFromNow(0) },
+  { id:"t10", listId:"list-merch", title:"Update shelf price tags for promotions",   status:"CLOSED", priority:"Priority_3", taskType:"merchandising", isRecurring:false, dueDate:daysFromNow(-2) },
+  { id:"t11", listId:"list-open",  title:"Walk the floor for safety hazards",        status:"OPEN",   priority:"Priority_2", taskType:"safety",        isRecurring:true,  dueDate:daysFromNow(0) },
+  { id:"t12", listId:"list-comp",  title:"Submit weekly compliance attestation",     status:"OPEN",   priority:"Priority_1", taskType:"compliance",    isRecurring:true,  dueDate:daysFromNow(1) },
+];
+
+/* ==========================================================================
+   2. DATA SOURCE ADAPTER  (the single seam — mock now, live Backstage later)
+   --------------------------------------------------------------------------
+   Every read/write goes through dataSource. To go live, implement the same
+   four methods against the real Tasks API (annotations show the mapping) and
+   swap the assignment at the bottom. Components never fetch() directly.
+   ========================================================================== */
+const mockDataSource = {
+  // GET /tasks/{installationId}/lists
+  async getLists() {
+    await tick();
+    return MOCK_LISTS.slice();
+  },
+  // Derived from task types today; could map to a real categories endpoint.
+  async getCategories() {
+    await tick();
+    const set = [...new Set(MOCK_TASKS.map(t => t.taskType))].sort();
+    return set;
+  },
+  // GET /tasks/{installationId}/task?listId=…  +  /task/search?q=… (filters)
+  // Returns tasks already filtered/sorted per the query the admin configured.
+  async searchTasks(query) {
+    await tick();
+    let out = MOCK_TASKS.slice();
+    if (query.listId && query.listId !== "all") out = out.filter(t => t.listId === query.listId);
+    if (query.category && query.category !== "all") out = out.filter(t => t.taskType === query.category);
+    if (query.recurrence === "oneoff")    out = out.filter(t => !t.isRecurring);
+    if (query.recurrence === "recurring") out = out.filter(t => t.isRecurring);
+    if (query.q) {
+      const q = query.q.toLowerCase();
+      out = out.filter(t => t.title.toLowerCase().includes(q) || t.taskType.toLowerCase().includes(q));
+    }
+    if (!query.showCompleted) out = out.filter(t => t.status !== "CLOSED");
+    out.sort(SORTERS[query.sort] || SORTERS.due);
+    if (query.max) out = out.slice(0, query.max);
+    return out;
+  },
+  // PATCH /tasks/{installationId}/task/{taskId}  { status }
+  async completeTask(taskId, done) {
+    await tick();
+    const t = MOCK_TASKS.find(x => x.id === taskId);
+    if (t) t.status = done ? "CLOSED" : "OPEN";
+    return { ok: true };
+  },
+};
+
+// TODO(live): const liveDataSource = { getLists(){ return api('/tasks/'+id+'/lists') } ... }
+const dataSource = mockDataSource;
+
+const SORTERS = {
+  due:      (a,b) => (a.dueDate||"").localeCompare(b.dueDate||""),
+  priority: (a,b) => a.priority.localeCompare(b.priority),
+  title:    (a,b) => a.title.localeCompare(b.title),
+};
+// simulate a little network latency so the "live re-query" is visible
+function tick(){ return new Promise(r => setTimeout(r, 90)); }
+
+/* ==========================================================================
+   3. CONFIG / QUERY  (reads the Studio form → a query object)
+   ========================================================================== */
+function readQuery() {
+  return {
+    installationId: INSTALLATION_ID,
+    listId:       byId("f-list").value,
+    category:     byId("f-cat").value,
+    recurrence:   currentRecur,
+    q:            byId("f-q").value.trim(),
+    max:          Math.max(1, parseInt(byId("f-max").value || "20", 10)),
+    sort:         byId("f-sort").value,
+    showCompleted: byId("f-showdone").checked,
+    allowToggle:   byId("f-allowtoggle").checked,
+  };
+}
+let currentRecur = "all";
+
+/* ==========================================================================
+   4. RENDER
+   ========================================================================== */
+const byId = id => document.getElementById(id);
+const esc = s => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+const PRIO_LABEL = { Priority_1:"High", Priority_2:"Med", Priority_3:"Low" };
+const PRIO_COLOR = { Priority_1:"#C41E3A", Priority_2:"#D97706", Priority_3:"#6b7280" };
+
+function fmtDue(iso){
+  if(!iso) return {text:"",overdue:false};
+  const d = new Date(iso+"T00:00:00"); const now = new Date(); now.setHours(0,0,0,0);
+  const overdue = d < now;
+  const text = d.toLocaleDateString(undefined,{month:"short",day:"numeric"});
+  return {text, overdue};
+}
+
+const ICON_CHECK = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+const ICON_RECUR = '<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>';
+
+function rowHtml(t){
+  const done = t.status === "CLOSED";
+  const cat = t.taskType;
+  const catCol = CATEGORY_COLORS[cat] || "#6b7280";
+  const due = fmtDue(t.dueDate);
+  const meta = [];
+  meta.push(`<span class="b b-cat" style="background:${catCol}">${esc(cat)}</span>`);
+  if (t.isRecurring) meta.push(`<span class="b b-recur">${ICON_RECUR} Recurring</span>`);
+  if (t.priority !== "Priority_3") meta.push(`<span class="b b-prio" style="color:${PRIO_COLOR[t.priority]}">${PRIO_LABEL[t.priority]}</span>`);
+  if (due.text) meta.push(`<span class="b b-due ${due.overdue && !done ? "overdue":""}">${due.overdue && !done ? "Overdue · ":"Due "}${esc(due.text)}</span>`);
+  return `<div class="row ${done?"done":""}" data-id="${t.id}">
+    <button class="check ${done?"checked":""}" data-check aria-label="Toggle task">${ICON_CHECK}</button>
+    <div class="row-main">
+      <span class="row-title">${esc(t.title)}</span>
+      <div class="row-meta">${meta.join("")}</div>
+    </div>
+  </div>`;
+}
+
+const EMPTY = `<div class="empty">
+  <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+  No tasks match these filters.</div>`;
+
+let renderToken = 0;
+async function render(){
+  const query = readQuery();
+  byId("query-echo").textContent = "query = " + JSON.stringify(
+    { list:query.listId, category:query.category, recurrence:query.recurrence, q:query.q||"—", sort:query.sort, max:query.max, showCompleted:query.showCompleted }, null, 1);
+
+  const my = ++renderToken;
+  const tasks = await dataSource.searchTasks(query);
+  if (my !== renderToken) return; // a newer render superseded this one
+
+  const total = MOCK_TASKS.length;
+  byId("news-count").textContent = `${tasks.length} of ${total} tasks match`;
+  const listEl = byId("list");
+  if (!tasks.length){ listEl.innerHTML = EMPTY; return; }
+  listEl.innerHTML = tasks.map(rowHtml).join("");
+
+  listEl.querySelectorAll(".row").forEach(row => {
+    const id = row.dataset.id;
+    const check = row.querySelector("[data-check]");
+    const canToggle = query.allowToggle;
+    if (!canToggle) check.style.cursor = "default";
+    check.addEventListener("click", async e => {
+      e.stopPropagation();
+      if (!canToggle){ toast("Check-off is disabled in this config"); return; }
+      const nowDone = !check.classList.contains("checked");
+      check.classList.toggle("checked", nowDone);
+      row.classList.toggle("done", nowDone);
+      await dataSource.completeTask(id, nowDone);           // write-back (PATCH status)
+      toast(nowDone ? "Marked complete ✓" : "Reopened");
+      if (nowDone && !query.showCompleted) setTimeout(render, 350); // drop it out of the view
+    });
+    row.addEventListener("click", () => toast("In the real widget this opens the task detail panel"));
+  });
+}
+
+let toastT;
+function toast(msg){
+  const el = byId("toast"); el.textContent = msg; el.classList.add("show");
+  clearTimeout(toastT); toastT = setTimeout(()=>el.classList.remove("show"), 1600);
+}
+
+/* ---- wire up the config form ---- */
+async function init(){
+  // populate list picker
+  const lists = await dataSource.getLists();
+  byId("f-list").innerHTML = `<option value="all">All lists</option>` +
+    lists.map(l => `<option value="${l.id}">${esc(l.title)}</option>`).join("");
+  // populate category picker
+  const cats = await dataSource.getCategories();
+  byId("f-cat").innerHTML = `<option value="all">All categories</option>` +
+    cats.map(c => `<option value="${c}">${esc(c)}</option>`).join("");
+
+  // recurrence segmented control
+  byId("f-recur").querySelectorAll("button").forEach(b => {
+    b.addEventListener("click", () => {
+      byId("f-recur").querySelectorAll("button").forEach(x=>x.classList.remove("on"));
+      b.classList.add("on"); currentRecur = b.dataset.v; render();
+    });
+  });
+  // re-render on any change
+  ["f-list","f-cat","f-q","f-max","f-sort","f-showdone","f-allowtoggle"].forEach(id => {
+    const el = byId(id);
+    el.addEventListener(id==="f-q" ? "input" : "change", render);
+  });
+  render();
+}
+init();
+</script>
+</body>
+</html>

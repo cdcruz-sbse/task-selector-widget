@@ -1,0 +1,16 @@
+# dependencies
+node_modules/
+# build output
+dist/
+build/
+# env / secrets — never commit API tokens
+.env
+.env.*
+*.local
+# os / editor
+.DS_Store
+.vscode/
+.idea/
+# logs
+*.log
+npm-debug.log*
