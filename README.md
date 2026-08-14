@@ -21,21 +21,39 @@ Built following the [Staffbase Custom Widget framework](https://developers.staff
   off; completion writes back to the Tasks API (`PATCH .../task/{id}`). Completed items
   stay visible, struck through.
 
-## Picker vs. the Studio config form
+## Deployment model (Option B — companion picker → config → widget)
 
-Staffbase's Studio config panel is a static JSON-Schema form and **cannot host a
-live, API-driven task picker** inside itself. In production the picker runs on the
-widget's own rendered surface (edit mode) or a companion page, and produces the
-`selectedTaskIds` the config stores. The prototype demonstrates that picker inline.
+The Studio config form is a static JSON-Schema form (RJSF); the widget SDK confirms
+config values are flat `string | number | boolean` and there is **no API for the
+widget to write its own config**. So the live picker cannot live in the config form,
+and the selection must flow *through* the config field. The chosen shape:
+
+1. **Task Picker — a companion page** (hosted alongside the widget, runs outside
+   Staffbase). Admin searches + multi-selects tasks, then **copies** the resulting
+   `installationId/taskId` string.
+2. **Widget config — Staffbase News editor.** Admin **pastes** that string into the
+   widget's `selectedTasks` config field (a plain string attribute), plus sort/title.
+3. **Published widget — employee view.** Renders the checklist from the **config
+   field** (not the picker), with check-off write-back.
+
+The prototype shows all three surfaces side by side and honestly wires the published
+widget to the config field, so the real data path is visible.
+
+## Auth
+
+- **Companion page / demo:** Basic API token (masked) — it runs outside Staffbase.
+- **Deployed widget:** `widgetApi.getServiceToken(installationId)` (SDK-provided,
+  no pasted secret). Both sit behind the adapter seam.
 
 ## Current status
 
 | Phase | State |
 |---|---|
-| Mock-first interactive prototype | ✅ Done — see [`prototype/index.html`](prototype/index.html) |
-| Real `@staffbase/create-widget` scaffold | ⏳ Next (needs Node 20+) |
-| Live Tasks API wiring (behind the adapter seam) | ⏳ After scaffold (needs API token + installation) |
-| Studio config schema + deploy (Vercel/CDN) | ⏳ |
+| Mock-first flow prototype (picker → config → widget) | ✅ Done — see [`prototype/index.html`](prototype/index.html) |
+| Real `@staffbase/create-widget` scaffold (employee widget) | ⏳ Next (needs Node 20+) |
+| Companion picker page | ⏳ |
+| Live Tasks API wiring (`getServiceToken` / Basic behind adapter) | ⏳ (needs installation + token) |
+| Deploy (Vercel/CDN) + plugin registration | ⏳ |
 
 ## Prototype
 

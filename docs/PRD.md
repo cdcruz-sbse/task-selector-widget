@@ -71,9 +71,17 @@ Discovery controls (used to *build* the selection; not necessarily persisted):
   So store/branch is **not a filter** — the only store-related value is `installationId`,
   the required API path param (single installation for the demo; extend to a list of
   installation IDs if tasks span installations). Dynamic per-viewer resolution stays Future.
-- **D8 — Token:** config field for demo (masked); production = serverless proxy + SSO JWT.
+- **D8 — Token:** confirmed via SDK. Deployed widget uses `widgetApi.getServiceToken(installationId)`
+  (no pasted secret). Companion page / standalone demo uses a masked Basic token (runs
+  outside Staffbase where getServiceToken isn't available). Both behind the adapter seam.
 - **D9 — No show-completed / allow-toggle options:** the widget is always a check-off
   checklist; completed items remain visible (struck through).
+- **D10 — Deployment model = Option B (companion picker → config → widget).** SDK
+  confirms `BlockAttributes` are flat `string|number|boolean` and there is **no config
+  write-back API**, so the live picker can't live in the Studio config form. Flow:
+  (1) companion **Task Picker** page (outside Staffbase) → copy `installationId/taskId`
+  string; (2) admin **pastes** into the widget's `selectedTasks` config field in the
+  News editor; (3) the deployed widget renders the checklist from that config field.
 
 ## Open questions (for live wiring)
 
@@ -99,3 +107,8 @@ Discovery controls (used to *build* the selection; not necessarily persisted):
 - **2026-08-13** — Pivot to **search-and-select** (D2 revised): filters + keyword are a
   discovery tool; admin multi-selects tasks → `selectedTaskIds[]`. Removed store filter
   and the show-completed / allow-check-off toggles (D9). Prototype rebuilt & validated.
+- **2026-08-13** — Verified widget-sdk v3 (`BlockAttributes` flat primitives; no config
+  write-back; `getServiceToken`/`getBranchInformation` exist). Locked **Option B / D10**
+  (companion picker → config → widget) and D8 auth. Prototype rebuilt as a 3-surface
+  flow (picker → paste → published widget); published view reads the config field, not
+  the picker. Handoff, decoupling, and check-off write-back validated in-browser.
