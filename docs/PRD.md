@@ -76,12 +76,16 @@ Discovery controls (used to *build* the selection; not necessarily persisted):
   outside Staffbase where getServiceToken isn't available). Both behind the adapter seam.
 - **D9 — No show-completed / allow-toggle options:** the widget is always a check-off
   checklist; completed items remain visible (struck through).
-- **D10 — Deployment model = Option B (companion picker → config → widget).** SDK
-  confirms `BlockAttributes` are flat `string|number|boolean` and there is **no config
-  write-back API**, so the live picker can't live in the Studio config form. Flow:
-  (1) companion **Task Picker** page (outside Staffbase) → copy `installationId/taskId`
-  string; (2) admin **pastes** into the widget's `selectedTasks` config field in the
-  News editor; (3) the deployed widget renders the checklist from that config field.
+- **D10 — Deployment model = Option B (discover → copy IDs → paste into config → widget).**
+  SDK confirms `BlockAttributes` are flat `string|number|boolean` and there is **no config
+  write-back API**, so the live picker can't live in the Studio config form. The selection
+  flows through the config field as an `installationId/taskId` string.
+- **D11 — Discovery surface = the Task ID Finder widget (not a companion page).** Rather
+  than a standalone hosted picker page, the admin uses a second Staffbase widget —
+  **[task-id-finder](https://github.com/cdcruz-sbse/task-id-finder)** (a copy of
+  `my-tasks-widget` + keyword search + a per-task copy-ID button) — to find a task and
+  copy its `installationId/taskId`, then pastes it into this widget's config in the News
+  editor. Keeps everything in-platform. The standalone companion-picker page is **parked**.
 
 ## Open questions (for live wiring)
 
