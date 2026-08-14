@@ -20,6 +20,9 @@ Built following the [Staffbase Custom Widget framework](https://developers.staff
 - **Interactive checklist.** Employees see exactly the selected tasks and check them
   off; completion writes back to the Tasks API (`PATCH .../task/{id}`). Completed items
   stay visible, struck through.
+- **Task detail modal.** Tapping a task opens a modal (bottom sheet on mobile, centered
+  card on desktop): type/priority/Critical + recurring badges, due/created/store/list,
+  description, attachments, and a Mark-as-done button synced with the checklist.
 
 ## Deployment model (Option B — companion picker → config → widget)
 
