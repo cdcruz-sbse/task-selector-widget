@@ -10,7 +10,7 @@ From the Backstage `tasks-api` (OAS 3.1, production). Base URL: `https://{domain
 |---|---|---|
 | GET | `/tasks/{installationId}/lists` | All task lists for the installation |
 | GET | `/tasks/{installationId}/task?listId=…` | Tasks in a list |
-| GET | `/tasks/{installationId}/task/search` | **Search tasks by filters** |
+| GET | `/tasks/{installationId}/task/search` | **Search** — see server params below |
 | GET | `/tasks/{installationId}/task/my-tasks` | Tasks assigned to current user |
 | GET | `/tasks/{installationId}/task/{taskId}` | Single task |
 | PATCH | `/tasks/{installationId}/task/{taskId}` | Update (e.g. `{status}`) |
@@ -18,6 +18,31 @@ From the Backstage `tasks-api` (OAS 3.1, production). Base URL: `https://{domain
 
 Other available (not used yet): create/delete/archive task, list CRUD, comments,
 comment reactions, task attachments.
+
+## `/task/search` — actual filtering surface (confirmed from spec)
+
+The server only filters by these. **Everything else is client-side.**
+
+| Param | Type | Notes |
+|---|---|---|
+| `installationId` | path, required | objectId |
+| `status` | array<string> | `OPEN` / `CLOSED`, default `["OPEN"]` |
+| `startDateFrom` / `startDateTo` | date-time | task start-date range |
+| `updateDateFrom` / `updateDateTo` | date-time | update-date range |
+| `limit` | integer | default 20 → maps to our "Max items" |
+| `cursor` | string | pagination; response returns `cursor` + `hasMore` |
+
+**Response:** `{ tasks: Task[], cursor: string, hasMore: boolean }`.
+
+### Two-phase query (how the widget filters)
+
+- **Server phase:** `status`, `limit`, date ranges, paginate via `cursor` while `hasMore`.
+- **Client phase (over the returned tasks):** task list (`taskListId`), store (`branchId`),
+  category (parsed from `[type:…]`), recurrence (parsed from `[recur:…]`), keyword
+  (title + description). There is **no** server param for any of these.
+
+> Category and recurrence are **not fields** on the task — they're markers in
+> title/description, parsed client-side (same as the Simple Tasks widget).
 
 ## Adapter seam (`dataSource`)
 
@@ -32,19 +57,41 @@ interface. Components never call `fetch` directly.
 | `completeTask(taskId, done)` | `PATCH /tasks/{id}/task/{taskId}` `{ status: done ? "CLOSED" : "OPEN" }` |
 | `getUserContext()` | `widgetApi.getUserInformation()` + `GET /users/{id}` |
 
-## Task model (fields we read)
+## Task model (confirmed schema)
 
-Mirrors the existing Simple Tasks widget:
+From the real search response `Task` object:
 
 | Field | Notes |
 |---|---|
-| `id`, `title`, `description` | `title`/`description` may carry `[type:…]` / `[recur:…]` markers |
-| `status` | `OPEN` / `CLOSED` / `DONE` (`CLOSED`/`DONE` = done) |
+| `id`, `installationId`, `branchId` | `branchId` = store/branch |
+| `taskListId` | which list the task belongs to |
+| `title`, `description` | carry `[type:…]` / `[recur:…]` markers (parsed client-side) |
+| `status` | `OPEN` / `CLOSED` |
 | `priority` | `Priority_1` (High) / `Priority_2` (Med) / `Priority_3` (Low) |
-| `taskType` | category (storetask, compliance, safety, training, …) |
-| `isRecurring` | from `[recur:…]` or `[type: recur-template]` |
-| `dueDate`, `createDate` | ISO dates |
-| `groupIds`, `assigneeIds`, `attachmentIds` | targeting / attachments |
+| `dueDate`, `startDate`, `createdAt`, `updatedAt` | ISO date-time |
+| `assigneeIds`, `groupIds`, `attachmentIds` | targeting / attachments |
+| `isArchived`, `version`, `creatorId`, `creatorType` | metadata |
+
+> **No `taskType` / `isRecurring` fields** — category & recurrence are derived from
+> `[type:…]` / `[recur:…]` markers in title/description.
+
+## Auth & security
+
+- Prototype/demo: Basic token as a config field (masked first-5 in the prototype;
+  standard `password` field in real Studio). **The token is visible to anyone who
+  inspects the widget** — demo-only.
+- Production-secure: a **serverless proxy** (Vercel) holds the token and verifies the
+  Staffbase SSO JWT; the browser never sees the token.
+
+## Installation ↔ store/branch
+
+A task carries both `installationId` (path param on every call) and `branchId`
+(store). Two ways to target a store:
+1. **Explicit config (recommended for demo):** admin sets Installation ID (+ optional
+   store/branch filter). Simple, deterministic.
+2. **Dynamic per-viewer (future):** resolve the viewer's store from their profile so
+   one widget shows each employee their own store's tasks. Needs a user→store→installation
+   mapping — parked in the PRD.
 
 ## Schemas referenced by the API
 
@@ -52,7 +99,3 @@ Mirrors the existing Simple Tasks widget:
 `GroupDisplay`, `InstallationConfiguration`, `CommonLocalization`,
 `TaskCommentListResponse`, `TaskCommentDto`, `ReactionCount`, `ReactionInternal`,
 `PaginationResponse`.
-
-> **TODO:** pull the OpenAPI `Definition` (raw) for the exact query params of
-> `/task/search` — needed to map the category / recurrence / keyword filters to real
-> parameter names before live wiring.

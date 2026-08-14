@@ -51,13 +51,21 @@ These become the widget's `configurationSchema` / `uiSchema` fields:
 - [x] Show-completed and read-only (allow-toggle off) modes behave.
 - [x] All data flows through one `dataSource` seam (mock now, live later).
 
+## Confirmed from spec (2026-08-13)
+
+- `/task/search` server params: `status`, `startDate*`, `updateDate*`, `limit`,
+  `cursor`. Response `{ tasks, cursor, hasMore }`. **No** server filter for list,
+  category, recurrence, or keyword → those run **client-side** (two-phase query).
+- Task schema has `taskListId`, `branchId`, `status`, `priority`, dates — but **no
+  `taskType`/`isRecurring`**; category & recurrence are `[type:…]`/`[recur:…]` markers.
+- **D7 — Store/installation targeting:** explicit config for the demo (Installation
+  ID + optional store/branch filter); dynamic per-viewer resolution parked in Future.
+- **D8 — Token:** config field for demo (masked); production = serverless proxy + SSO JWT.
+
 ## Open questions (for live wiring)
 
-- Exact query params of `GET /tasks/{installationId}/task/search` (need OpenAPI
-  `Definition` tab / raw spec for filter names: type? recurrence? status? q?).
-- Are "categories" first-class, or derived from `[type:…]` markers (as in the
-  existing Simple Tasks widget)? Confirm against real data.
 - Token access level for the POC installation (gates write-back / PATCH).
+- Real `branchId` values + whether installation is per-store in your environment.
 - Where the widget bundle is hosted (Vercel vs CDN) and the plugin registration.
 
 ## Future (parked — do not build yet)
@@ -72,3 +80,6 @@ These become the widget's `configurationSchema` / `uiSchema` fields:
 
 - **2026-08-13** — Repo created. Mock-first prototype built and validated in-browser
   (query-driven filtering + write-back working). Decisions D1–D6 locked.
+- **2026-08-13** — `/task/search` spec + Task schema confirmed. Prototype updated:
+  two-phase (server/client) query, `[type:]`/`[recur:]` marker parsing, store/branch
+  filter, masked API-token field. Decisions D7 (store targeting) & D8 (token) added.
