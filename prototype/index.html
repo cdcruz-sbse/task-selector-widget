@@ -151,12 +151,7 @@
         <div class="field mono">
           <label>Installation ID</label>
           <input type="text" id="f-inst" value="store-demo-001" />
-          <div class="help">The Tasks installation to read (path param on every call).</div>
-        </div>
-        <div class="field">
-          <label>Store / branch</label>
-          <select id="f-branch"></select>
-          <div class="help">Scopes to one store's tasks (client-side, by branchId).</div>
+          <div class="help">The Tasks installation to read (required path param on every call).</div>
         </div>
 
         <div class="group-label">What surfaces (the query)</div>
@@ -238,12 +233,9 @@ const MOCK_LISTS = [
   { id: "list-comp",  title: "Compliance & Safety" },
   { id: "list-merch", title: "Weekly Merchandising" },
 ];
-// Stores/branches (task.branchId). In your env an installation may be per-store,
-// in which case Installation ID *is* the store; here we show branch filtering.
-const MOCK_BRANCHES = [
-  { id: "branch-101", title: "Downtown" },
-  { id: "branch-202", title: "Airport" },
-];
+// Note: tasks still carry branchId (the store they were added to), but this widget
+// surfaces tasks by CONTENT (list/category/recurrence/keyword) — independent of
+// store — so branchId is metadata here, not a filter.
 
 function daysFromNow(n){ const d=new Date(); d.setDate(d.getDate()+n); return d.toISOString(); }
 // Tasks use the REAL schema (id, branchId, installationId, taskListId, status,
@@ -263,9 +255,6 @@ const MOCK_TASKS = [
   mk("t10","branch-101","list-merch", "Update shelf price tags for promotions","[type: merchandising] Weekly promo refresh.", "CLOSED", "Priority_3", -2),
   mk("t11","branch-101","list-open",  "Walk the floor for safety hazards",     "[type: safety] [recur: daily]", "OPEN", "Priority_2", 0),
   mk("t12","branch-101","list-comp",  "Submit weekly compliance attestation",  "[type: compliance] [recur: weekly]", "OPEN", "Priority_1", 1),
-  // A couple of Airport-branch tasks to demonstrate the store filter:
-  mk("t13","branch-202","list-open",  "Open the airside kiosk shutters",       "[type: storetask] [recur: daily]", "OPEN", "Priority_1", 0),
-  mk("t14","branch-202","list-comp",  "Verify duty-free seal integrity",       "[type: compliance] [recur: daily]", "OPEN", "Priority_2", 0),
 ];
 function mk(id, branchId, taskListId, title, description, status, priority, dueInDays){
   return { id, branchId, installationId:"store-demo-001", taskListId, creatorId:"sys", creatorType:"admin",
@@ -287,8 +276,6 @@ const stripMarkers = t => (t || "").replace(/\[[a-z]+:[^\]]*\]/gi, "").replace(/
 const mockDataSource = {
   // GET /tasks/{installationId}/lists
   async getLists(_ctx) { await tick(); return MOCK_LISTS.slice(); },
-  // GET /tasks/{installationId}/groups (branches/stores live alongside; mocked here)
-  async getBranches(_ctx) { await tick(); return MOCK_BRANCHES.slice(); },
   // Derived from parsed [type:…] markers across the installation's tasks.
   async getCategories(_ctx) {
     await tick();
@@ -303,9 +290,8 @@ const mockDataSource = {
     let page = MOCK_TASKS.filter(t => !t.isArchived && statuses.includes(t.status));
     // (date-range params omitted in the mock; server limit applied AFTER client
     //  filters below to keep the demo intuitive — real code paginates via cursor.)
-    // --- CLIENT phase (list / branch / category / recurrence / keyword) ---
+    // --- CLIENT phase (list / category / recurrence / keyword) ---
     let out = page;
-    if (query.branchId && query.branchId !== "all") out = out.filter(t => t.branchId === query.branchId);
     if (query.listId  && query.listId  !== "all") out = out.filter(t => t.taskListId === query.listId);
     if (query.category && query.category !== "all") out = out.filter(t => parseType(t.description) === query.category);
     if (query.recurrence === "oneoff")    out = out.filter(t => !isRecurring(t.description));
@@ -348,7 +334,6 @@ function readQuery() {
     apiToken:      realToken,
     baseUrl:       byId("f-base").value.trim(),
     installationId: byId("f-inst").value.trim(),
-    branchId:      byId("f-branch").value,
     listId:        byId("f-list").value,
     category:      byId("f-cat").value,
     recurrence:    currentRecur,
@@ -366,8 +351,6 @@ function readQuery() {
 const esc = s => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 const PRIO_LABEL = { Priority_1:"High", Priority_2:"Med", Priority_3:"Low" };
 const PRIO_COLOR = { Priority_1:"#C41E3A", Priority_2:"#D97706", Priority_3:"#6b7280" };
-const branchName = id => (MOCK_BRANCHES.find(b => b.id === id)||{}).title || id;
-
 function fmtDue(iso){
   if(!iso) return {text:"",overdue:false};
   const d = new Date(iso); d.setHours(0,0,0,0);
@@ -379,7 +362,7 @@ function fmtDue(iso){
 const ICON_CHECK = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
 const ICON_RECUR = '<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>';
 
-function rowHtml(t, showStore){
+function rowHtml(t){
   const done = t.status === "CLOSED";
   const cat = parseType(t.description);
   const catCol = CATEGORY_COLORS[cat] || "#6b7280";
@@ -389,7 +372,6 @@ function rowHtml(t, showStore){
   if (isRecurring(t.description)) meta.push(`<span class="b b-recur">${ICON_RECUR} Recurring</span>`);
   else meta.push(`<span class="b" style="background:#f1f5f9;color:#475569">One-off</span>`);
   if (t.priority !== "Priority_3") meta.push(`<span class="b b-prio" style="color:${PRIO_COLOR[t.priority]}">${PRIO_LABEL[t.priority]}</span>`);
-  if (showStore) meta.push(`<span class="b b-store">${esc(branchName(t.branchId))}</span>`);
   if (due.text) meta.push(`<span class="b b-due ${due.overdue && !done ? "overdue":""}">${due.overdue && !done ? "Overdue · ":"Due "}${esc(due.text)}</span>`);
   return `<div class="row ${done?"done":""}" data-id="${t.id}">
     <button class="check ${done?"checked":""}" data-check aria-label="Toggle task">${ICON_CHECK}</button>
@@ -410,18 +392,17 @@ async function render(){
   byId("query-echo").innerHTML =
     `<span class="echo-tag server">server</span>GET /tasks/${esc(query.installationId||"—")}/task/search\n`
     + `  status=${statuses}  limit=${query.max}\n`
-    + `<span class="echo-tag client">client</span>store=${esc(query.branchId)} list=${esc(query.listId)} `
+    + `<span class="echo-tag client">client</span>list=${esc(query.listId)} `
     + `category=${esc(query.category)} recurrence=${esc(query.recurrence)} q=${esc(query.q||"—")}`;
 
   const my = ++renderToken;
   const tasks = await dataSource.searchTasks(query);
   if (my !== renderToken) return;
 
-  const showStore = query.branchId === "all";
   byId("news-count").textContent = `${tasks.length} of ${MOCK_TASKS.length} tasks match`;
   const listEl = byId("list");
   if (!tasks.length){ listEl.innerHTML = EMPTY; return; }
-  listEl.innerHTML = tasks.map(t => rowHtml(t, showStore)).join("");
+  listEl.innerHTML = tasks.map(t => rowHtml(t)).join("");
 
   listEl.querySelectorAll(".row").forEach(row => {
     const id = row.dataset.id;
@@ -459,11 +440,9 @@ function wireToken(){
 /* ---- init ---- */
 async function init(){
   wireToken();
-  const [lists, cats, branches] = await Promise.all([
-    dataSource.getLists(), dataSource.getCategories(), dataSource.getBranches()
+  const [lists, cats] = await Promise.all([
+    dataSource.getLists(), dataSource.getCategories()
   ]);
-  byId("f-branch").innerHTML = `<option value="all">All stores</option>` +
-    branches.map(b => `<option value="${b.id}">${esc(b.title)}</option>`).join("");
   byId("f-list").innerHTML = `<option value="all">All lists</option>` +
     lists.map(l => `<option value="${l.id}">${esc(l.title)}</option>`).join("");
   byId("f-cat").innerHTML = `<option value="all">All categories</option>` +
@@ -475,7 +454,7 @@ async function init(){
       b.classList.add("on"); currentRecur = b.dataset.v; render();
     });
   });
-  ["f-base","f-inst","f-branch","f-list","f-cat","f-q","f-max","f-sort","f-showdone","f-allowtoggle"].forEach(id => {
+  ["f-base","f-inst","f-list","f-cat","f-q","f-max","f-sort","f-showdone","f-allowtoggle"].forEach(id => {
     const el = byId(id);
     el.addEventListener(id==="f-q" ? "input" : "change", render);
   });

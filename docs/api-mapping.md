@@ -86,12 +86,11 @@ From the real search response `Task` object:
 ## Installation ↔ store/branch
 
 A task carries both `installationId` (path param on every call) and `branchId`
-(store). Two ways to target a store:
-1. **Explicit config (recommended for demo):** admin sets Installation ID (+ optional
-   store/branch filter). Simple, deterministic.
-2. **Dynamic per-viewer (future):** resolve the viewer's store from their profile so
-   one widget shows each employee their own store's tasks. Needs a user→store→installation
-   mapping — parked in the PRD.
+(store). **Decision (D7):** the widget surfaces tasks by content, independent of
+store — so `branchId` is **not** a filter. `installationId` is the only store-related
+value, and only because the API requires it in the path (single installation for the
+demo; a list of installation IDs if tasks span installations). Dynamic per-viewer
+resolution (user→store→installation) is parked in the PRD.
 
 ## Schemas referenced by the API
 

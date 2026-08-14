@@ -58,8 +58,11 @@ These become the widget's `configurationSchema` / `uiSchema` fields:
   category, recurrence, or keyword → those run **client-side** (two-phase query).
 - Task schema has `taskListId`, `branchId`, `status`, `priority`, dates — but **no
   `taskType`/`isRecurring`**; category & recurrence are `[type:…]`/`[recur:…]` markers.
-- **D7 — Store/installation targeting:** explicit config for the demo (Installation
-  ID + optional store/branch filter); dynamic per-viewer resolution parked in Future.
+- **D7 — Store/installation targeting:** the admin surfaces tasks by **content**
+  (list/category/recurrence/keyword), **independent of which store a task belongs to**.
+  So store/branch is **not a filter** — the only store-related value is `installationId`,
+  the required API path param (single installation for the demo; extend to a list of
+  installation IDs if tasks span installations). Dynamic per-viewer resolution stays Future.
 - **D8 — Token:** config field for demo (masked); production = serverless proxy + SSO JWT.
 
 ## Open questions (for live wiring)
