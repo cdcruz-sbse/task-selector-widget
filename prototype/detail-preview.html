@@ -125,7 +125,6 @@ function renderDetail(t){const done=t.status==="CLOSED";
     <div class="tsw-detail-meta">
       <div class="tsw-mrow ${t.overdue&&!done?"overdue":""}">${IC.cal}${esc(t.due)}</div>
       <div class="tsw-mrow">${IC.clock}Created ${esc(t.created)}</div>
-      <div class="tsw-mrow">${IC.store}Store ${esc(t.installId)}</div>
       <div class="tsw-mrow">${IC.list}${esc(t.list)}</div>
     </div>
     <div class="tsw-lbl">Description</div>

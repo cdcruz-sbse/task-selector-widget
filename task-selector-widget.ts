@@ -372,7 +372,6 @@ const factory: BlockFactory = (BaseBlockClass, _widgetApi) => {
           <div class="${p}-detail-meta">
             ${due.text ? `<div class="${p}-mrow ${due.overdue && !done ? "overdue" : ""}">${IC_CAL}${due.overdue && !done ? "Overdue · " : "Due "}${esc(due.text)}</div>` : ""}
             ${created.text ? `<div class="${p}-mrow">${IC_CLOCK}Created ${esc(created.text)}</div>` : ""}
-            <div class="${p}-mrow">${IC_STORE}Store ${esc(t.installId)}</div>
             ${t.listName ? `<div class="${p}-mrow">${IC_LIST}${esc(t.listName)}</div>` : ""}
           </div>
           <div class="${p}-lbl">Description</div>
