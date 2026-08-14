@@ -49,11 +49,24 @@ widget to the config field, so the real data path is visible.
 
 | Phase | State |
 |---|---|
-| Mock-first flow prototype (picker → config → widget) | ✅ Done — see [`prototype/index.html`](prototype/index.html) |
-| Real `@staffbase/create-widget` scaffold (employee widget) | ⏳ Next (needs Node 20+) |
-| Companion picker page | ⏳ |
-| Live Tasks API wiring (`getServiceToken` / Basic behind adapter) | ⏳ (needs installation + token) |
-| Deploy (Vercel/CDN) + plugin registration | ⏳ |
+| Mock-first flow prototype | ✅ [`prototype/index.html`](prototype/index.html) |
+| **Real deployable widget** (`defineBlock`, config→checklist, check-off) | ✅ [`task-selector-widget.ts`](task-selector-widget.ts) |
+| CI build + host (`dist/task-selector-widget.js` → GitHub Pages) | ⏳ runs on push (`.github/workflows/build.yml`) |
+| Register in Studio + paste task IDs | ⏳ |
+| Live auth via `getServiceToken()` (instead of Basic token) | ⏳ |
+
+## Deploy (what Studio needs)
+
+1. **Build** — happens automatically in GitHub Actions on push; the bundle is
+   published to `https://cdcruz-sbse.github.io/task-selector-widget/task-selector-widget.js`.
+   (Locally: `npm install && npm run build` → `dist/task-selector-widget.js`.)
+2. **Register** that URL as a custom widget in Staffbase Studio.
+3. **Add** the widget to a News post; in its config paste task IDs
+   (`installationId/taskId`, one per line — copy them from the **Task ID Finder** widget),
+   set a title/sort, and publish. End users get the interactive checklist.
+
+Config fields: API token (password), Base URL, **Selected tasks** (IDs), Title, Sort,
+Primary/Background color, Limit height.
 
 ## Prototype
 
