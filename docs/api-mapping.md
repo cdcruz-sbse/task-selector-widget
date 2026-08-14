@@ -49,13 +49,17 @@ The server only filters by these. **Everything else is client-side.**
 The prototype's `mockDataSource` and the future `liveDataSource` implement the same
 interface. Components never call `fetch` directly.
 
-| Method | Live implementation |
-|---|---|
-| `getLists()` | `GET /tasks/{id}/lists` → `TaskList[]` |
-| `getCategories()` | derive from task `taskType`s, or a categories source if one exists |
-| `searchTasks(query)` | `GET /tasks/{id}/task/search` with filter params (+ `?listId=`) |
-| `completeTask(taskId, done)` | `PATCH /tasks/{id}/task/{taskId}` `{ status: done ? "CLOSED" : "OPEN" }` |
-| `getUserContext()` | `widgetApi.getUserInformation()` + `GET /users/{id}` |
+| Method | Used by | Live implementation |
+|---|---|---|
+| `getLists()` | picker | `GET /tasks/{id}/lists` → `TaskList[]` |
+| `getCategories()` | picker | derive from parsed `[type:…]` markers |
+| `searchTasks(query)` | picker (admin browse) | `GET /tasks/{id}/task/search` (server: status/limit/dates) then client-filter list/category/recurrence/keyword |
+| `getTasksByIds(ids)` | employee view | `GET /tasks/{id}/task/{taskId}` per selected id |
+| `completeTask(taskId, done)` | employee view | `PATCH /tasks/{id}/task/{taskId}` `{ status: done ? "CLOSED" : "OPEN" }` |
+| `getUserContext()` | both | `widgetApi.getUserInformation()` + `GET /users/{id}` |
+
+**Selection model:** the picker's `searchTasks` is for *browsing*; the admin hand-picks
+tasks → `selectedTaskIds[]` (config). The employee view renders `getTasksByIds(selectedTaskIds)`.
 
 ## Task model (confirmed schema)
 

@@ -14,41 +14,49 @@ manually pasting task IDs.
 | # | Decision | Choice |
 |---|---|---|
 | D1 | Task data source | **Staffbase Tasks API** (Backstage `tasks-api`, production). Real, not mocked in prod. |
-| D2 | Selection model | **Query-driven** — admin sets filters; widget resolves live via `/task/search`. |
-| D3 | Checklist behavior | **Interactive with write-back** — check-off `PATCH`es task status. |
+| D2 | Selection model | **Search-and-select (hand-picked)** — admin uses filters + keyword to *search*, then multi-selects specific tasks. Config output = `selectedTaskIds[]` (same `installationId/taskId` format the Simple Tasks widget renders from). Filters are a discovery tool, not a live query. |
+| D3 | Checklist behavior | **Interactive with write-back, always on** — check-off `PATCH`es task status. Completed tasks stay visible (struck through). No "show completed"/"allow check-off" toggles (D9). |
 | D4 | Framework | Official `@staffbase/create-widget` (React/TS, widget-sdk v3, `defineBlock`). |
 | D5 | Repo | Public, `cdcruz-sbse/task-selector-widget`. |
 | D6 | Build order | Mock-first (zero-build prototype) → scaffold → live wiring → deploy. |
 
 ## Studio input parameters (the query)
 
-These become the widget's `configurationSchema` / `uiSchema` fields:
+Stored config:
 
-- **API token** (Basic auth) — `ui:widget: password`
+- **API token** (Basic auth) — `ui:widget: password` (demo); production proxies it
 - **Base URL** — default `https://app.staffbase.com/api`
-- **Installation ID** (store) — which Tasks installation to read
-- **Task list** — filter to one list (or all)
-- **Category / type** — filter by task type
-- **Recurrence** — all / one-off / recurring
-- **Keyword search** — free-text filter
-- **Max items**, **Sort by**, **Show completed**, **Allow check-off (write-back)**
+- **Installation ID** — which Tasks installation to read (required path param)
+- **selectedTaskIds[]** — the hand-picked tasks (the core output)
+- **Sort by** — due / priority / title / order-added (employee checklist order)
+
+Discovery controls (used to *build* the selection; not necessarily persisted):
+
+- **Keyword search**, **Task list**, **Category / type**, **Recurrence** — filter the
+  admin's search results so they can find and multi-select the right tasks.
+
+> **Real-Studio note:** the static config form can't host this live picker. In
+> production the picker runs on the widget's own rendered surface (edit mode) or a
+> companion page; it produces `selectedTaskIds`, which the config stores.
 
 ## Golden path (demo story)
 
 1. Admin drops the widget into a News post in the content designer.
-2. Admin configures: list = "Store Opening Checklist", recurrence = recurring,
-   sort = due date, allow check-off = on.
-3. Employee opens the News post → sees the live checklist of matching tasks.
-4. Employee checks a task off → status writes back to the Tasks API → task drops
-   from the "open" view.
+2. Admin searches (e.g. keyword "freezer", or list = "Store Opening Checklist") and
+   taps `+` to hand-pick the specific tasks that should appear; sets sort order.
+3. Employee opens the News post → sees the checklist of exactly those selected tasks.
+4. Employee checks a task off → status writes back to the Tasks API; the item stays
+   in the list, struck through, so progress is visible.
 
 ## Acceptance criteria (prototype phase — DONE)
 
-- [x] Admin filters (list/category/recurrence/keyword/sort/max) re-query live.
-- [x] Checklist renders task model faithfully (category color, recurring badge,
-      priority, due/overdue).
-- [x] Check-off toggles status via the adapter and updates the view.
-- [x] Show-completed and read-only (allow-toggle off) modes behave.
+- [x] Admin searches via filters + keyword; results update live.
+- [x] Admin multi-selects specific tasks (`+`/`✓`, add-all, clear); selection
+      persists across different searches; selection is the config output.
+- [x] Employee checklist shows exactly the selected tasks, sorted per config.
+- [x] Checklist renders task model faithfully (category color, recurring/one-off
+      badge, priority, due/overdue).
+- [x] Check-off toggles status via the adapter; completed items stay struck through.
 - [x] All data flows through one `dataSource` seam (mock now, live later).
 
 ## Confirmed from spec (2026-08-13)
@@ -64,6 +72,8 @@ These become the widget's `configurationSchema` / `uiSchema` fields:
   the required API path param (single installation for the demo; extend to a list of
   installation IDs if tasks span installations). Dynamic per-viewer resolution stays Future.
 - **D8 — Token:** config field for demo (masked); production = serverless proxy + SSO JWT.
+- **D9 — No show-completed / allow-toggle options:** the widget is always a check-off
+  checklist; completed items remain visible (struck through).
 
 ## Open questions (for live wiring)
 
@@ -86,3 +96,6 @@ These become the widget's `configurationSchema` / `uiSchema` fields:
 - **2026-08-13** — `/task/search` spec + Task schema confirmed. Prototype updated:
   two-phase (server/client) query, `[type:]`/`[recur:]` marker parsing, store/branch
   filter, masked API-token field. Decisions D7 (store targeting) & D8 (token) added.
+- **2026-08-13** — Pivot to **search-and-select** (D2 revised): filters + keyword are a
+  discovery tool; admin multi-selects tasks → `selectedTaskIds[]`. Removed store filter
+  and the show-completed / allow-check-off toggles (D9). Prototype rebuilt & validated.

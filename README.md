@@ -12,21 +12,21 @@ Built following the [Staffbase Custom Widget framework](https://developers.staff
 
 ## What it does
 
-- **Query-driven selection.** The admin sets filters in Studio — task list,
-  category/type, one-off vs recurring, keyword search, sort, max items. The widget
-  resolves them against the Tasks API **at render time**, so the checklist stays
-  current as tasks are added, completed, or recur.
-- **Interactive checklist.** Employees see the matching tasks as a checklist and can
-  check them off; completion writes back to the Tasks API (`PATCH .../task/{id}`).
-- **Configurable behavior.** Show/hide completed, read-only vs check-off, sort order.
+- **Search-and-select.** The admin uses filters + keyword search (task list,
+  category/type, one-off vs recurring) to *browse* the Tasks API, then **hand-picks**
+  the specific tasks (multi-select) that should appear. The config output is a set of
+  `selectedTaskIds` — the same `installationId/taskId` format the Simple Tasks widget
+  renders from.
+- **Interactive checklist.** Employees see exactly the selected tasks and check them
+  off; completion writes back to the Tasks API (`PATCH .../task/{id}`). Completed items
+  stay visible, struck through.
 
-## Why query-driven (not a visual picker)
+## Picker vs. the Studio config form
 
 Staffbase's Studio config panel is a static JSON-Schema form and **cannot host a
-live, API-driven task picker** inside itself. So instead of hand-picking task IDs,
-the admin defines a *query*; the widget runs it live. This auto-updates and needs no
-second surface. (A hand-picked "companion picker" is parked in [docs/PRD.md](docs/PRD.md)
-under Future.)
+live, API-driven task picker** inside itself. In production the picker runs on the
+widget's own rendered surface (edit mode) or a companion page, and produces the
+`selectedTaskIds` the config stores. The prototype demonstrates that picker inline.
 
 ## Current status
 
@@ -55,8 +55,9 @@ rewrite. See [docs/api-mapping.md](docs/api-mapping.md) for the full mapping.
 | `dataSource` method | Live endpoint |
 |---|---|
 | `getLists()` | `GET /tasks/{installationId}/lists` |
-| `getCategories()` | derived from task types (or categories endpoint) |
-| `searchTasks(query)` | `GET /tasks/{installationId}/task/search` (+ `?listId=`) |
+| `getCategories()` | derived from `[type:…]` markers |
+| `searchTasks(query)` | `GET /tasks/{installationId}/task/search` + client-side filters (picker) |
+| `getTasksByIds(ids)` | `GET /tasks/{installationId}/task/{taskId}` per selected id (employee view) |
 | `completeTask(id, done)` | `PATCH /tasks/{installationId}/task/{taskId}` `{status}` |
 
 ## Repo layout

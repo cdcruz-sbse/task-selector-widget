@@ -8,23 +8,23 @@
   ============================================================================
   Staffbase Task Selector Widget — MOCK-FIRST PROTOTYPE (zero build step)
   ============================================================================
-  Lets you SEE and PLAY WITH the query-driven selector before we scaffold the
-  real @staffbase/create-widget bundle and wire live Backstage Tasks API calls.
+  MODEL: the admin SEARCHES the Tasks API (filters + keyword) and HAND-PICKS the
+  specific tasks (multi-select) that should appear in the employee checklist.
+  The config's real output is a set of selected task IDs (installationId/taskId) —
+  the same format the existing Simple Tasks widget already renders from.
 
-  IMPORTANT — how filtering really works (from the tasks-api spec):
-    The search endpoint only filters SERVER-SIDE by: status, date ranges, limit,
-    cursor. There is NO server param for list / category / recurrence / keyword,
-    and tasks have NO taskType/isRecurring fields. So — exactly like the existing
-    Simple Tasks widget — category & recurrence live as [type:…] / [recur:…]
-    MARKERS inside title/description and are parsed CLIENT-SIDE.
+    ADMIN (left)  : search → multi-select tasks   → produces selectedTaskIds[]
+    EMPLOYEE (right): renders the selected tasks as a checklist; check-off writes
+                      back (PATCH status). Completed tasks stay, struck through.
 
-    searchTasks() therefore runs a two-phase query:
-      • SERVER phase : status + limit (+ dates, cursor)   → GET .../task/search
-      • CLIENT phase : list, category, recurrence, keyword → over the returned page
+  Filtering split (from the tasks-api spec):
+    • SERVER  : GET /tasks/{id}/task/search  → status, limit, dates, cursor
+    • CLIENT  : list (taskListId), category ([type:…]), recurrence ([recur:…]),
+                keyword — the API has no server params for these.
 
-  Read the file top→bottom: 1) MOCK DATA  2) DATA SOURCE ADAPTER (the one seam)
-  3) CONFIG/QUERY  4) RENDER. Nothing here hits the network; each mock method is
-  annotated with the real endpoint it maps to.
+  Read top→bottom: 1) MOCK DATA  2) DATA SOURCE ADAPTER (the one seam)
+  3) STATE/CONFIG  4) RENDER. Nothing hits the network; each mock method notes
+  the real endpoint it maps to.
   ============================================================================
 -->
 <style>
@@ -40,11 +40,11 @@
   .wrap { max-width: 1180px; margin: 0 auto; }
   .page-head { margin-bottom: 16px; }
   .page-head h1 { font-size: 20px; font-weight: 800; letter-spacing: -.2px; }
-  .page-head p { font-size: 13px; color: var(--gray); margin-top: 4px; max-width: 780px; }
+  .page-head p { font-size: 13px; color: var(--gray); margin-top: 4px; max-width: 790px; }
   .badge-mock { display:inline-block; font-size:10px; font-weight:800; letter-spacing:.6px;
     text-transform:uppercase; color:#fff; background:var(--brand); padding:3px 8px; border-radius:999px; vertical-align:middle; margin-left:8px; }
 
-  .cols { display: grid; grid-template-columns: 400px 1fr; gap: 18px; align-items: start; }
+  .cols { display: grid; grid-template-columns: 430px 1fr; gap: 18px; align-items: start; }
   @media (max-width: 900px) { .cols { grid-template-columns: 1fr; } }
 
   .panel { background:#fff; border:1px solid var(--border); border-radius: var(--r-lg);
@@ -56,28 +56,57 @@
   .panel-body { padding: 16px; }
 
   .group-label { font-size:10px; font-weight:800; letter-spacing:.7px; text-transform:uppercase;
-    color: var(--gray-lt); margin: 4px 0 10px; padding-bottom:6px; border-bottom:1px dashed var(--border); }
+    color: var(--gray-lt); margin: 4px 0 10px; padding-bottom:6px; border-bottom:1px dashed var(--border);
+    display:flex; align-items:center; justify-content:space-between; }
   .group-label:not(:first-child) { margin-top: 18px; }
+  .group-label .pill { background:var(--brand); color:#fff; font-size:10px; font-weight:800; padding:1px 7px; border-radius:999px; letter-spacing:.3px; }
 
-  .field { margin-bottom: 14px; }
+  .field { margin-bottom: 12px; }
   .field label { display:block; font-size: 12px; font-weight: 700; color: var(--dark); margin-bottom: 5px; }
   .field .help { font-size: 11px; color: var(--gray-lt); font-weight: 500; margin-top: 4px; }
-  .field select, .field input[type=text], .field input[type=number], .field input[type=password] {
+  .field select, .field input[type=text], .field input[type=number] {
     width: 100%; font: inherit; font-size: 13px; padding: 8px 10px; border: 1.5px solid var(--border);
     border-radius: var(--r-md); background: #fafafa; color: var(--dark); transition: border-color .15s, background .15s; }
   .field select:focus, .field input:focus { outline: none; border-color: var(--brand); background: #fff; }
   .field.mono input { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:12px; letter-spacing:.3px; }
+  .row2 { display:flex; gap:8px; }
   .seg { display:flex; gap:6px; }
   .seg button { flex:1; font: inherit; font-size:12px; font-weight:700; padding:7px 8px; border:1.5px solid var(--border);
     background:#fafafa; color:var(--gray); border-radius: var(--r-md); cursor:pointer; transition: all .15s; }
   .seg button.on { border-color: var(--brand); background: rgba(var(--brand-rgb),.08); color: var(--brand); }
+
+  /* search results (the picker) */
+  .pick { border:1px solid var(--border); border-radius: var(--r-md); max-height: 300px; overflow-y:auto; background:#fff; }
+  .pick-row { display:flex; align-items:center; gap:10px; padding:9px 11px; border-bottom:1px solid #f1f3f5; cursor:pointer; transition:background .12s; }
+  .pick-row:last-child { border-bottom:none; }
+  .pick-row:hover { background:#fafafa; }
+  .pick-row.sel { background: rgba(var(--brand-rgb),.045); }
+  .pick-main { flex:1; min-width:0; }
+  .pick-title { font-size:13px; font-weight:600; line-height:1.35; }
+  .pick-meta { display:flex; flex-wrap:wrap; gap:5px; margin-top:4px; }
+  .add-btn { flex-shrink:0; width:26px; height:26px; border-radius:50%; border:1.8px solid var(--border); background:#fff;
+    color:var(--gray-lt); cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all .15s; padding:0; }
+  .add-btn:hover { border-color: var(--brand); color: var(--brand); }
+  .add-btn.on { background: var(--success); border-color: var(--success); color:#fff; }
+  .pick-empty { padding: 18px 12px; text-align:center; color: var(--gray-lt); font-size:12.5px; }
+  .pick-tools { display:flex; gap:8px; margin: 8px 0 0; }
+  .pick-tools button { font: inherit; font-size:11.5px; font-weight:700; padding:5px 9px; border:1.5px solid var(--border);
+    background:#fafafa; color:var(--gray); border-radius: var(--r-sm); cursor:pointer; }
+  .pick-tools button:hover { border-color: var(--brand); color: var(--brand); }
+
   .chk { display:flex; align-items:center; gap:9px; cursor:pointer; }
   .chk input { width:16px; height:16px; accent-color: var(--brand); }
   .chk span { font-size:13px; font-weight:600; }
-  .config-note { margin-top:14px; padding:10px 12px; background:rgba(var(--brand-rgb),.05); border:1px solid rgba(var(--brand-rgb),.15);
-    border-radius: var(--r-md); font-size:11px; color:#7a2b2d; line-height:1.5; }
-  .config-note b { font-weight:800; }
 
+  .query-echo { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:11px; color:#334155;
+    background:#0f172a08; border:1px solid var(--border); border-radius: var(--r-sm); padding:8px 10px; margin-top:12px;
+    white-space:pre-wrap; word-break:break-word; }
+  .echo-tag { display:inline-block; font-size:9px; font-weight:800; text-transform:uppercase; letter-spacing:.5px;
+    padding:1px 5px; border-radius:3px; margin-right:5px; }
+  .echo-tag.server { background:#dcfce7; color:#166534; }
+  .echo-tag.config { background:#fef3c7; color:#92400e; }
+
+  /* employee checklist */
   .news-frame { background:#fff; }
   .news-head { padding: 4px 4px 12px; }
   .news-title { font-size: 16px; font-weight: 800; }
@@ -102,20 +131,12 @@
     font-weight:800; letter-spacing:.4px; text-transform:uppercase; line-height:1.5; }
   .b-cat { color:#fff; }
   .b-recur { background: rgba(var(--brand-rgb),.1); color: var(--brand); }
-  .b-store { background:#eef2ff; color:#4338ca; }
   .b-due { color: var(--gray-lt); font-weight:600; text-transform:none; letter-spacing:0; font-size:11px; }
   .b-due.overdue { color: var(--error); font-weight:800; }
   .b-prio { border:1.5px solid currentColor; font-size:9.5px; }
-  .empty { padding: 30px 12px; text-align:center; color: var(--gray-lt); font-size:13px; }
+  .b-sm { font-size:9px; padding:1px 5px; }
+  .empty { padding: 34px 16px; text-align:center; color: var(--gray-lt); font-size:13px; }
   .empty svg { display:block; margin: 0 auto 10px; opacity:.5; }
-
-  .query-echo { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:11px; color:#334155;
-    background:#0f172a08; border:1px solid var(--border); border-radius: var(--r-sm); padding:8px 10px; margin-top:6px;
-    white-space:pre-wrap; word-break:break-word; }
-  .echo-tag { display:inline-block; font-size:9px; font-weight:800; text-transform:uppercase; letter-spacing:.5px;
-    padding:1px 5px; border-radius:3px; margin-right:5px; }
-  .echo-tag.server { background:#dcfce7; color:#166534; }
-  .echo-tag.client { background:#dbeafe; color:#1e40af; }
   .toast { position:fixed; bottom:18px; left:50%; transform:translateX(-50%) translateY(20px); opacity:0;
     background:#0f172a; color:#fff; font-size:12.5px; font-weight:600; padding:9px 14px; border-radius:999px;
     box-shadow:0 6px 24px rgba(0,0,0,.25); transition: all .25s; pointer-events:none; z-index:50; }
@@ -126,10 +147,9 @@
 <div class="wrap">
   <div class="page-head">
     <h1>Task Selector Widget <span class="badge-mock">Mock prototype</span></h1>
-    <p>Left = the <b>Studio config</b> an admin fills in. Right = what an <b>employee sees</b> in the News post.
-       The checklist is <b>query-driven</b> and runs in two phases — <b>server</b> (status, limit) then
-       <b>client</b> (list, category, one-off/recurring, keyword) — because the Tasks API doesn't filter those
-       server-side. Check tasks off to see the write-back.</p>
+    <p>Left = the <b>Studio config</b>: the admin <b>searches</b> the Tasks API (filters + keyword) and
+       <b>hand-picks</b> the specific tasks (multi-select) to include. Right = the <b>employee</b> checklist,
+       showing only the selected tasks — check them off to complete (writes back).</p>
   </div>
 
   <div class="cols">
@@ -151,19 +171,20 @@
         <div class="field mono">
           <label>Installation ID</label>
           <input type="text" id="f-inst" value="store-demo-001" />
-          <div class="help">The Tasks installation to read (required path param on every call).</div>
         </div>
 
-        <div class="group-label">What surfaces (the query)</div>
+        <div class="group-label">Find &amp; add tasks <span class="pill" id="sel-pill">0 selected</span></div>
+        <div class="field">
+          <label>Keyword search</label>
+          <input type="text" id="f-q" placeholder="search titles &amp; descriptions…" />
+        </div>
         <div class="field">
           <label>Task list</label>
           <select id="f-list"></select>
-          <div class="help">GET /tasks/{installationId}/lists · filtered client-side by taskListId</div>
         </div>
         <div class="field">
           <label>Category / type</label>
           <select id="f-cat"></select>
-          <div class="help">Parsed from [type:…] markers (no server field)</div>
         </div>
         <div class="field">
           <label>Recurrence</label>
@@ -172,32 +193,24 @@
             <button data-v="oneoff">One-off</button>
             <button data-v="recurring">Recurring</button>
           </div>
-          <div class="help">Parsed from [recur:…] markers</div>
-        </div>
-        <div class="field">
-          <label>Keyword search</label>
-          <input type="text" id="f-q" placeholder="e.g. safety, freezer, open…" />
-          <div class="help">Client-side over title + description (no server q param)</div>
         </div>
 
-        <div class="group-label">Display</div>
-        <div class="field">
-          <label>Max items · Sort</label>
-          <div style="display:flex; gap:8px;">
-            <input type="number" id="f-max" value="20" min="1" max="100" style="flex:0 0 90px;" />
-            <select id="f-sort" style="flex:1;">
-              <option value="due">Due date</option>
-              <option value="priority">Priority</option>
-              <option value="title">Title (A–Z)</option>
-            </select>
-          </div>
-          <div class="help">"Max" maps to the server <code>limit</code> param.</div>
+        <div style="font-size:11px;font-weight:700;color:var(--gray);margin:14px 0 6px;" id="pick-count">Search results</div>
+        <div class="pick" id="pick"></div>
+        <div class="pick-tools">
+          <button id="pick-all">Add all shown</button>
+          <button id="pick-clear">Clear selection</button>
         </div>
+
+        <div class="group-label">Display order</div>
         <div class="field">
-          <label class="chk"><input type="checkbox" id="f-showdone" /> <span>Show completed tasks</span></label>
-        </div>
-        <div class="field">
-          <label class="chk"><input type="checkbox" id="f-allowtoggle" checked /> <span>Allow employees to check off (write-back)</span></label>
+          <label>Sort employee checklist by</label>
+          <select id="f-sort">
+            <option value="due">Due date</option>
+            <option value="priority">Priority</option>
+            <option value="title">Title (A–Z)</option>
+            <option value="picked">Order added</option>
+          </select>
         </div>
 
         <div class="query-echo" id="query-echo"></div>
@@ -209,7 +222,7 @@
       <div class="panel-head"><span class="dot"></span><h2>News post preview</h2><span class="sub">employee view</span></div>
       <div class="panel-body">
         <div class="news-head">
-          <div class="news-title" id="news-title">Your store checklist</div>
+          <div class="news-title">Your store checklist</div>
           <div class="news-count" id="news-count"></div>
         </div>
         <div class="list" id="list"></div>
@@ -221,77 +234,59 @@
 
 <script>
 /* ==========================================================================
-   1. MOCK DATA  (stands in for Backstage Tasks API responses)
+   1. MOCK DATA
    -------------------------------------------------------------------------- */
 const CATEGORY_COLORS = {
   storetask: "#da2e32", compliance: "#8B4513", maintenance: "#2E7D4A",
   training: "#4A90A4", safety: "#D97706", merchandising: "#7C3AED", inventory: "#0369A1",
 };
-// GET /tasks/{installationId}/lists  →  TaskList[]
 const MOCK_LISTS = [
   { id: "list-open",  title: "Store Opening Checklist" },
   { id: "list-comp",  title: "Compliance & Safety" },
   { id: "list-merch", title: "Weekly Merchandising" },
 ];
-// Note: tasks still carry branchId (the store they were added to), but this widget
-// surfaces tasks by CONTENT (list/category/recurrence/keyword) — independent of
-// store — so branchId is metadata here, not a filter.
-
 function daysFromNow(n){ const d=new Date(); d.setDate(d.getDate()+n); return d.toISOString(); }
-// Tasks use the REAL schema (id, branchId, installationId, taskListId, status,
-// priority, dueDate, startDate, timestamps…). Category & recurrence are NOT
-// fields — they live as [type:…] / [recur:…] markers in the description, exactly
-// like the existing Simple Tasks widget. The adapter parses them client-side.
+// Real schema; category & recurrence are [type:…]/[recur:…] markers in description.
 const MOCK_TASKS = [
-  mk("t01","branch-101","list-open",  "Unlock and disarm the store",           "[type: storetask] [recur: daily] Open the front and side entrances.", "OPEN",   "Priority_1", 0),
-  mk("t02","branch-101","list-open",  "Count and set the cash drawer",         "[type: storetask] [recur: daily] Verify float against yesterday's close.", "OPEN", "Priority_1", 0),
-  mk("t03","branch-101","list-open",  "Power on POS terminals",                "[type: storetask] [recur: daily]", "CLOSED", "Priority_2", 0),
-  mk("t04","branch-101","list-comp",  "Check walk-in freezer temperature log", "[type: safety] [recur: daily] Record temp; flag if above -18°C.", "OPEN", "Priority_1", 0),
-  mk("t05","branch-101","list-comp",  "Fire exit inspection",                  "[type: compliance] [recur: weekly] Confirm all exits are clear.", "OPEN", "Priority_2", -1),
-  mk("t06","branch-101","list-comp",  "Complete monthly food-safety training", "[type: training] One-off certification module.", "OPEN", "Priority_2", 6),
-  mk("t07","branch-101","list-comp",  "Replace expired first-aid supplies",    "[type: maintenance] Check kit against the checklist.", "OPEN", "Priority_3", 3),
-  mk("t08","branch-101","list-merch", "Set up new seasonal end-cap display",   "[type: merchandising] Use the autumn planogram.", "OPEN", "Priority_2", 2),
-  mk("t09","branch-101","list-merch", "Rotate perishable stock (FIFO)",        "[type: inventory] [recur: daily]", "OPEN", "Priority_1", 0),
-  mk("t10","branch-101","list-merch", "Update shelf price tags for promotions","[type: merchandising] Weekly promo refresh.", "CLOSED", "Priority_3", -2),
-  mk("t11","branch-101","list-open",  "Walk the floor for safety hazards",     "[type: safety] [recur: daily]", "OPEN", "Priority_2", 0),
-  mk("t12","branch-101","list-comp",  "Submit weekly compliance attestation",  "[type: compliance] [recur: weekly]", "OPEN", "Priority_1", 1),
+  mk("t01","list-open",  "Unlock and disarm the store",           "[type: storetask] [recur: daily] Open the front and side entrances.", "OPEN",   "Priority_1", 0),
+  mk("t02","list-open",  "Count and set the cash drawer",         "[type: storetask] [recur: daily] Verify float against yesterday's close.", "OPEN", "Priority_1", 0),
+  mk("t03","list-open",  "Power on POS terminals",                "[type: storetask] [recur: daily]", "OPEN", "Priority_2", 0),
+  mk("t04","list-comp",  "Check walk-in freezer temperature log", "[type: safety] [recur: daily] Record temp; flag if above -18°C.", "OPEN", "Priority_1", 0),
+  mk("t05","list-comp",  "Fire exit inspection",                  "[type: compliance] [recur: weekly] Confirm all exits are clear.", "OPEN", "Priority_2", -1),
+  mk("t06","list-comp",  "Complete monthly food-safety training", "[type: training] One-off certification module.", "OPEN", "Priority_2", 6),
+  mk("t07","list-comp",  "Replace expired first-aid supplies",    "[type: maintenance] Check kit against the checklist.", "OPEN", "Priority_3", 3),
+  mk("t08","list-merch", "Set up new seasonal end-cap display",   "[type: merchandising] Use the autumn planogram.", "OPEN", "Priority_2", 2),
+  mk("t09","list-merch", "Rotate perishable stock (FIFO)",        "[type: inventory] [recur: daily]", "OPEN", "Priority_1", 0),
+  mk("t10","list-merch", "Update shelf price tags for promotions","[type: merchandising] Weekly promo refresh.", "OPEN", "Priority_3", -2),
+  mk("t11","list-open",  "Walk the floor for safety hazards",     "[type: safety] [recur: daily]", "OPEN", "Priority_2", 0),
+  mk("t12","list-comp",  "Submit weekly compliance attestation",  "[type: compliance] [recur: weekly]", "OPEN", "Priority_1", 1),
 ];
-function mk(id, branchId, taskListId, title, description, status, priority, dueInDays){
-  return { id, branchId, installationId:"store-demo-001", taskListId, creatorId:"sys", creatorType:"admin",
-    isArchived:false, title, description, status, priority,
-    dueDate: daysFromNow(dueInDays), startDate: daysFromNow(dueInDays-1),
+function mk(id, taskListId, title, description, status, priority, dueInDays){
+  return { id, installationId:"store-demo-001", taskListId, isArchived:false,
+    title, description, status, priority, dueDate: daysFromNow(dueInDays), startDate: daysFromNow(dueInDays-1),
     assigneeIds:[], groupIds:[], attachmentIds:[], createdAt: daysFromNow(-7), updatedAt: daysFromNow(-1), version:1 };
 }
 
-// ---- client-side marker parsing (mirrors the Simple Tasks widget) ----
 const TYPE_RE = /\[type:\s*([^\]]+)\]/i;
 const RECUR_RE = /\[recur:\s*[^\]]*\]/i;
-const parseType  = t => (TYPE_RE.exec(t || "") || [])[1]?.trim().toLowerCase() || null;
+const parseType   = t => (TYPE_RE.exec(t || "") || [])[1]?.trim().toLowerCase() || null;
 const isRecurring = t => RECUR_RE.test(t || "");
 const stripMarkers = t => (t || "").replace(/\[[a-z]+:[^\]]*\]/gi, "").replace(/\s{2,}/g, " ").trim();
 
 /* ==========================================================================
-   2. DATA SOURCE ADAPTER  (the single seam — mock now, live Backstage later)
+   2. DATA SOURCE ADAPTER  (mock now, live Backstage later)
    -------------------------------------------------------------------------- */
 const mockDataSource = {
-  // GET /tasks/{installationId}/lists
-  async getLists(_ctx) { await tick(); return MOCK_LISTS.slice(); },
-  // Derived from parsed [type:…] markers across the installation's tasks.
-  async getCategories(_ctx) {
+  async getLists() { await tick(); return MOCK_LISTS.slice(); },                 // GET /tasks/{id}/lists
+  async getCategories() {                                                        // derived from [type:…]
     await tick();
     return [...new Set(MOCK_TASKS.map(t => parseType(t.description)).filter(Boolean))].sort();
   },
-  // Two-phase query. SERVER: GET /tasks/{installationId}/task/search?status=&limit=
-  // (+ startDate/updateDate ranges, cursor). CLIENT: everything else.
+  // ADMIN SEARCH. server: GET /tasks/{id}/task/search (status/limit/dates/cursor)
+  // client: list, category, recurrence, keyword.
   async searchTasks(query) {
     await tick();
-    // --- SERVER phase (what the real endpoint actually filters) ---
-    const statuses = query.showCompleted ? ["OPEN","CLOSED"] : ["OPEN"];
-    let page = MOCK_TASKS.filter(t => !t.isArchived && statuses.includes(t.status));
-    // (date-range params omitted in the mock; server limit applied AFTER client
-    //  filters below to keep the demo intuitive — real code paginates via cursor.)
-    // --- CLIENT phase (list / category / recurrence / keyword) ---
-    let out = page;
+    let out = MOCK_TASKS.filter(t => !t.isArchived);
     if (query.listId  && query.listId  !== "all") out = out.filter(t => t.taskListId === query.listId);
     if (query.category && query.category !== "all") out = out.filter(t => parseType(t.description) === query.category);
     if (query.recurrence === "oneoff")    out = out.filter(t => !isRecurring(t.description));
@@ -300,11 +295,14 @@ const mockDataSource = {
       const q = query.q.toLowerCase();
       out = out.filter(t => (t.title + " " + stripMarkers(t.description)).toLowerCase().includes(q));
     }
-    out.sort(SORTERS[query.sort] || SORTERS.due);
-    if (query.max) out = out.slice(0, query.max);
     return out;
   },
-  // PATCH /tasks/{installationId}/task/{taskId}  { status }
+  // EMPLOYEE VIEW. Resolve the hand-picked ids → tasks. Live: GET /task/{taskId} per id.
+  async getTasksByIds(ids) {
+    await tick();
+    return ids.map(id => MOCK_TASKS.find(t => t.id === id)).filter(Boolean);
+  },
+  // PATCH /tasks/{id}/task/{taskId} { status }
   async completeTask(taskId, done) {
     await tick();
     const t = MOCK_TASKS.find(x => x.id === taskId);
@@ -312,37 +310,26 @@ const mockDataSource = {
     return { ok: true };
   },
 };
-// TODO(live): liveDataSource implements the same 5 methods against the real API.
 const dataSource = mockDataSource;
+function tick(){ return new Promise(r => setTimeout(r, 70)); }
 
 const SORTERS = {
   due:      (a,b) => (a.dueDate||"").localeCompare(b.dueDate||""),
   priority: (a,b) => a.priority.localeCompare(b.priority),
   title:    (a,b) => a.title.localeCompare(b.title),
 };
-function tick(){ return new Promise(r => setTimeout(r, 80)); }
 
 /* ==========================================================================
-   3. CONFIG / QUERY
+   3. STATE / CONFIG
    -------------------------------------------------------------------------- */
 const byId = id => document.getElementById(id);
 let currentRecur = "all";
-let realToken = ""; // the true token value; the visible field is masked on blur
+let realToken = "";
+const selected = [];  // ordered list of picked task ids (the config output)
 
-function readQuery() {
-  return {
-    apiToken:      realToken,
-    baseUrl:       byId("f-base").value.trim(),
-    installationId: byId("f-inst").value.trim(),
-    listId:        byId("f-list").value,
-    category:      byId("f-cat").value,
-    recurrence:    currentRecur,
-    q:             byId("f-q").value.trim(),
-    max:           Math.max(1, parseInt(byId("f-max").value || "20", 10)),
-    sort:          byId("f-sort").value,
-    showCompleted: byId("f-showdone").checked,
-    allowToggle:   byId("f-allowtoggle").checked,
-  };
+function searchQuery() {
+  return { listId: byId("f-list").value, category: byId("f-cat").value,
+    recurrence: currentRecur, q: byId("f-q").value.trim() };
 }
 
 /* ==========================================================================
@@ -355,94 +342,131 @@ function fmtDue(iso){
   if(!iso) return {text:"",overdue:false};
   const d = new Date(iso); d.setHours(0,0,0,0);
   const now = new Date(); now.setHours(0,0,0,0);
-  const overdue = d < now;
-  const text = d.toLocaleDateString(undefined,{month:"short",day:"numeric"});
-  return {text, overdue};
+  return { text: d.toLocaleDateString(undefined,{month:"short",day:"numeric"}), overdue: d < now };
 }
 const ICON_CHECK = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+const ICON_PLUS  = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>';
+const ICON_TICK  = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
 const ICON_RECUR = '<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>';
 
-function rowHtml(t){
-  const done = t.status === "CLOSED";
-  const cat = parseType(t.description);
-  const catCol = CATEGORY_COLORS[cat] || "#6b7280";
-  const due = fmtDue(t.dueDate);
-  const meta = [];
-  if (cat) meta.push(`<span class="b b-cat" style="background:${catCol}">${esc(cat)}</span>`);
-  if (isRecurring(t.description)) meta.push(`<span class="b b-recur">${ICON_RECUR} Recurring</span>`);
-  else meta.push(`<span class="b" style="background:#f1f5f9;color:#475569">One-off</span>`);
-  if (t.priority !== "Priority_3") meta.push(`<span class="b b-prio" style="color:${PRIO_COLOR[t.priority]}">${PRIO_LABEL[t.priority]}</span>`);
-  if (due.text) meta.push(`<span class="b b-due ${due.overdue && !done ? "overdue":""}">${due.overdue && !done ? "Overdue · ":"Due "}${esc(due.text)}</span>`);
-  return `<div class="row ${done?"done":""}" data-id="${t.id}">
-    <button class="check ${done?"checked":""}" data-check aria-label="Toggle task">${ICON_CHECK}</button>
-    <div class="row-main">
-      <span class="row-title">${esc(stripMarkers(t.title))}</span>
-      <div class="row-meta">${meta.join("")}</div>
-    </div>
-  </div>`;
+function metaBadges(t, small){
+  const cls = small ? "b b-sm" : "b";
+  const cat = parseType(t.description); const catCol = CATEGORY_COLORS[cat] || "#6b7280";
+  const m = [];
+  if (cat) m.push(`<span class="${cls} b-cat" style="background:${catCol}">${esc(cat)}</span>`);
+  m.push(isRecurring(t.description)
+    ? `<span class="${cls} b-recur">${ICON_RECUR} Recurring</span>`
+    : `<span class="${cls}" style="background:#f1f5f9;color:#475569">One-off</span>`);
+  if (t.priority !== "Priority_3") m.push(`<span class="${cls} b-prio" style="color:${PRIO_COLOR[t.priority]}">${PRIO_LABEL[t.priority]}</span>`);
+  return m.join("");
 }
+
+/* ---- the picker (admin search results with multi-select) ---- */
+let pickToken = 0;
+async function renderPicker(){
+  const q = searchQuery();
+  const my = ++pickToken;
+  const results = await dataSource.searchTasks(q);
+  if (my !== pickToken) return;
+
+  byId("pick-count").textContent = `Search results (${results.length})`;
+  byId("sel-pill").textContent = `${selected.length} selected`;
+  const el = byId("pick");
+  if (!results.length){ el.innerHTML = `<div class="pick-empty">No tasks match this search.</div>`; return; }
+  el.innerHTML = results.map(t => {
+    const on = selected.includes(t.id);
+    return `<div class="pick-row ${on?"sel":""}" data-id="${t.id}">
+      <div class="pick-main">
+        <div class="pick-title">${esc(stripMarkers(t.title))}</div>
+        <div class="pick-meta">${metaBadges(t, true)}</div>
+      </div>
+      <button class="add-btn ${on?"on":""}" data-add aria-label="${on?"Remove":"Add"}">${on?ICON_TICK:ICON_PLUS}</button>
+    </div>`;
+  }).join("");
+
+  el.querySelectorAll(".pick-row").forEach(row => {
+    const id = row.dataset.id;
+    const toggle = () => {
+      const i = selected.indexOf(id);
+      if (i === -1) { selected.push(id); toast("Added to checklist"); }
+      else { selected.splice(i,1); toast("Removed"); }
+      renderPicker(); renderEmployee();
+    };
+    row.querySelector("[data-add]").addEventListener("click", e => { e.stopPropagation(); toggle(); });
+    row.addEventListener("click", toggle);
+  });
+  updateEcho();
+}
+
+/* ---- the employee checklist (selected tasks only) ---- */
 const EMPTY = `<div class="empty">
   <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-  No tasks match these filters.</div>`;
+  No tasks selected yet.<br>Search on the left and tap <b>+</b> to add tasks to this checklist.</div>`;
+let empToken = 0;
+async function renderEmployee(){
+  const my = ++empToken;
+  let tasks = await dataSource.getTasksByIds(selected);
+  if (my !== empToken) return;
+  const sort = byId("f-sort").value;
+  if (sort !== "picked") tasks = tasks.slice().sort(SORTERS[sort] || SORTERS.due);
 
-let renderToken = 0;
-async function render(){
-  const query = readQuery();
-  const statuses = query.showCompleted ? '["OPEN","CLOSED"]' : '["OPEN"]';
-  byId("query-echo").innerHTML =
-    `<span class="echo-tag server">server</span>GET /tasks/${esc(query.installationId||"—")}/task/search\n`
-    + `  status=${statuses}  limit=${query.max}\n`
-    + `<span class="echo-tag client">client</span>list=${esc(query.listId)} `
-    + `category=${esc(query.category)} recurrence=${esc(query.recurrence)} q=${esc(query.q||"—")}`;
-
-  const my = ++renderToken;
-  const tasks = await dataSource.searchTasks(query);
-  if (my !== renderToken) return;
-
-  byId("news-count").textContent = `${tasks.length} of ${MOCK_TASKS.length} tasks match`;
+  byId("news-count").textContent = selected.length ? `${tasks.length} selected task${tasks.length!==1?"s":""}` : "";
   const listEl = byId("list");
   if (!tasks.length){ listEl.innerHTML = EMPTY; return; }
-  listEl.innerHTML = tasks.map(t => rowHtml(t)).join("");
+
+  listEl.innerHTML = tasks.map(t => {
+    const done = t.status === "CLOSED"; const due = fmtDue(t.dueDate);
+    const meta = [ metaBadges(t, false) ];
+    if (due.text) meta.push(`<span class="b b-due ${due.overdue && !done ? "overdue":""}">${due.overdue && !done ? "Overdue · ":"Due "}${esc(due.text)}</span>`);
+    return `<div class="row ${done?"done":""}" data-id="${t.id}">
+      <button class="check ${done?"checked":""}" data-check aria-label="Toggle task">${ICON_CHECK}</button>
+      <div class="row-main"><span class="row-title">${esc(stripMarkers(t.title))}</span><div class="row-meta">${meta.join("")}</div></div>
+    </div>`;
+  }).join("");
 
   listEl.querySelectorAll(".row").forEach(row => {
     const id = row.dataset.id;
     const check = row.querySelector("[data-check]");
-    if (!query.allowToggle) check.style.cursor = "default";
     check.addEventListener("click", async e => {
       e.stopPropagation();
-      if (!query.allowToggle){ toast("Check-off is disabled in this config"); return; }
       const nowDone = !check.classList.contains("checked");
-      check.classList.toggle("checked", nowDone);
-      row.classList.toggle("done", nowDone);
-      await dataSource.completeTask(id, nowDone);
+      check.classList.toggle("checked", nowDone); row.classList.toggle("done", nowDone);
+      await dataSource.completeTask(id, nowDone);        // PATCH status (write-back)
       toast(nowDone ? "Marked complete ✓" : "Reopened");
-      if (nowDone && !query.showCompleted) setTimeout(render, 350);
     });
     row.addEventListener("click", () => toast("In the real widget this opens the task detail panel"));
   });
 }
 
+function updateEcho(){
+  const inst = byId("f-inst").value.trim() || "—";
+  const ids = selected.map(id => `${inst}/${id}`);
+  byId("query-echo").innerHTML =
+    `<span class="echo-tag server">server</span>GET /tasks/${esc(inst)}/task/search  (to browse)\n`
+    + `<span class="echo-tag config">config</span>selectedTaskIds = [\n`
+    + (ids.length ? ids.map(x => `  "${esc(x)}"`).join(",\n") + "\n" : "")
+    + `]  → the widget renders exactly these`;
+}
+
 let toastT;
 function toast(msg){
   const el = byId("toast"); el.textContent = msg; el.classList.add("show");
-  clearTimeout(toastT); toastT = setTimeout(()=>el.classList.remove("show"), 1600);
+  clearTimeout(toastT); toastT = setTimeout(()=>el.classList.remove("show"), 1400);
 }
 
 /* ---- token mask-on-blur (first 5 chars visible, rest asterisks) ---- */
 function maskToken(v){ return v.length <= 5 ? v : v.slice(0,5) + "*".repeat(Math.min(v.length-5, 27)); }
 function wireToken(){
   const el = byId("f-token");
-  el.addEventListener("focus", () => { el.value = realToken; });               // reveal while editing
-  el.addEventListener("input", () => { realToken = el.value; render(); });     // capture the real value
-  el.addEventListener("blur",  () => { el.value = maskToken(realToken); });    // mask at rest
+  el.addEventListener("focus", () => { el.value = realToken; });
+  el.addEventListener("input", () => { realToken = el.value; });
+  el.addEventListener("blur",  () => { el.value = maskToken(realToken); });
 }
 
 /* ---- init ---- */
 async function init(){
   wireToken();
-  const [lists, cats] = await Promise.all([
-    dataSource.getLists(), dataSource.getCategories()
-  ]);
+  const [lists, cats] = await Promise.all([dataSource.getLists(), dataSource.getCategories()]);
   byId("f-list").innerHTML = `<option value="all">All lists</option>` +
     lists.map(l => `<option value="${l.id}">${esc(l.title)}</option>`).join("");
   byId("f-cat").innerHTML = `<option value="all">All categories</option>` +
@@ -451,14 +475,26 @@ async function init(){
   byId("f-recur").querySelectorAll("button").forEach(b => {
     b.addEventListener("click", () => {
       byId("f-recur").querySelectorAll("button").forEach(x=>x.classList.remove("on"));
-      b.classList.add("on"); currentRecur = b.dataset.v; render();
+      b.classList.add("on"); currentRecur = b.dataset.v; renderPicker();
     });
   });
-  ["f-base","f-inst","f-list","f-cat","f-q","f-max","f-sort","f-showdone","f-allowtoggle"].forEach(id => {
-    const el = byId(id);
-    el.addEventListener(id==="f-q" ? "input" : "change", render);
+  ["f-list","f-cat","f-q"].forEach(id =>
+    byId(id).addEventListener(id==="f-q" ? "input" : "change", renderPicker));
+  byId("f-sort").addEventListener("change", renderEmployee);
+  byId("f-inst").addEventListener("input", updateEcho);
+
+  byId("pick-all").addEventListener("click", async () => {
+    const results = await dataSource.searchTasks(searchQuery());
+    results.forEach(t => { if (!selected.includes(t.id)) selected.push(t.id); });
+    toast(`Added ${results.length} shown`); renderPicker(); renderEmployee();
   });
-  render();
+  byId("pick-clear").addEventListener("click", () => {
+    selected.length = 0; toast("Selection cleared"); renderPicker(); renderEmployee();
+  });
+
+  // seed a couple so the employee view isn't empty on first load
+  selected.push("t01","t04","t09");
+  renderPicker(); renderEmployee();
 }
 init();
 </script>
