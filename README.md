@@ -68,8 +68,9 @@ widget to the config field, so the real data path is visible.
    (`installationId/taskId`, one per line — copy them from the **Task ID Finder** widget),
    set a title/sort, and publish. End users get the interactive checklist.
 
-Config fields: API token (password), Base URL, **Selected tasks** (IDs), Title, Sort,
-Primary/Background color, Limit height.
+Config fields: API token (password), Base URL, **Selected tasks** (`installationId/taskId`),
+**Selected task lists** (`installationId/listId` — embeds every task in the list, live), Title,
+Sort, Primary/Background color, Limit height.
 
 ## Prototype
 
