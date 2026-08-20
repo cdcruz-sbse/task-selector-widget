@@ -32,6 +32,7 @@ const configurationSchema: JSONSchema7 = {
     apitoken:     { type: "string",  title: "API Token", default: "" },
     baseurl:      { type: "string",  title: "Base URL", default: DEFAULT_BASE_URL },
     tasklist:     { type: "string",  title: "Selected tasks (installationId/taskId, one per line)", default: "" },
+    tasklists:    { type: "string",  title: "Selected task lists (installationId/listId, one per line)", default: "" },
     title:        { type: "string",  title: "Checklist Title", default: "Your checklist" },
     sortby:       { type: "string",  title: "Sort By", default: "picked",
                     enum: ["picked", "due", "priority", "title"] },
@@ -52,7 +53,8 @@ const configurationSchema: JSONSchema7 = {
 const uiSchema: UiSchema = {
   apitoken:  { "ui:widget": "password", "ui:help": "Staffbase Basic auth token (for the demo). Production can use getServiceToken()." },
   baseurl:   { "ui:help": "Staffbase API base URL, e.g. https://app.staffbase.com/api" },
-  tasklist:  { "ui:widget": "textarea", "ui:help": "One task per line as installationId/taskId — copy these from the Task ID Finder widget." },
+  tasklist:  { "ui:widget": "textarea", "ui:help": "One task per line as installationId/taskId — copy these from the Store Tasks widget." },
+  tasklists: { "ui:widget": "textarea", "ui:help": "Embed every task in a list. One per line as installationId/listId — copy a list ID from the Store Tasks widget." },
   sortby:    { "ui:help": "Order tasks by: order added, due date, priority, or title." },
   primarycolor: { "ui:widget": "color" },
   backgroundcolor: { "ui:widget": "color", "ui:help": "Leave blank for transparent." },
@@ -61,6 +63,7 @@ const uiSchema: UiSchema = {
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface TaskRef { installId: string; taskId: string; }
+interface ListRef { installId: string; listId: string; }
 interface Task {
   id: string; installId: string; title: string; description: string;
   status: string; dueDate: string | null; createDate: string | null; priority: string;
@@ -159,6 +162,11 @@ const factory: BlockFactory = (BaseBlockClass, _widgetApi) => {
         .split(/[\n,]+/).map(s => s.trim()).filter(Boolean)
         .map(line => { const m = line.split(/[\/:]/).map(x => x.trim()).filter(Boolean); return m.length >= 2 ? { installId: m[0], taskId: m[1] } : null; })
         .filter((x): x is TaskRef => !!x);
+
+      const listRefs: ListRef[] = (this.getAttribute("tasklists") || "")
+        .split(/[\n,]+/).map(s => s.trim()).filter(Boolean)
+        .map(line => { const m = line.split(/[\/:]/).map(x => x.trim()).filter(Boolean); return m.length >= 2 ? { installId: m[0], listId: m[1] } : null; })
+        .filter((x): x is ListRef => !!x);
 
       const apiOpts = (): RequestInit => ({
         credentials: "omit",
@@ -332,7 +340,7 @@ const factory: BlockFactory = (BaseBlockClass, _widgetApi) => {
         if (sortBy !== "picked") visible.sort(SORTERS[sortBy] || SORTERS.due);
         countEl.textContent = visible.length ? `${visible.length} task${visible.length !== 1 ? "s" : ""}` : "";
         if (!visible.length) {
-          listEl.innerHTML = `<div class="${p}-state">${refs.length ? "No tasks found for the configured IDs." : "No tasks configured yet."}</div>`;
+          listEl.innerHTML = `<div class="${p}-state">${(refs.length||listRefs.length) ? "No tasks found for the configured IDs / lists." : "No tasks configured yet."}</div>`;
           return;
         }
         listEl.innerHTML = visible.map(rowHtml).join("");
@@ -427,11 +435,25 @@ const factory: BlockFactory = (BaseBlockClass, _widgetApi) => {
       dToggle.addEventListener("click", () => { if (detailTask) toggle(detailTask); });
       document.addEventListener("keydown", e => { if (e.key === "Escape" && detailTask) closeDetail(); });
 
+      // Map a raw task (from /task/{id} or /task?listId=) into our Task shape.
+      function toTask(d: any, installId: string, listNames: Map<string, string>): Task {
+        const desc = d.description || "";
+        const listId = d.taskListId || d.listId || "";
+        return {
+          id: d.id, installId,
+          title: stripMarkers(d.title || "") || "(untitled)", description: desc,
+          status: d.status || "OPEN", dueDate: d.dueDate || null, createDate: d.createdAt || d.createDate || null,
+          priority: d.priority || "Priority_3", taskType: parseType(d.title || "") || parseType(desc),
+          isRecurring: RECUR_RE.test(desc) || RECUR_RE.test(d.title || ""), auditSeverity: d.auditSeverity || "",
+          listId, listName: listNames.get(listId) || "", attachmentIds: Array.isArray(d.attachmentIds) ? d.attachmentIds : [], ok: true,
+        };
+      }
+
       async function load() {
-        if (!refs.length) { render(); return; }
-        // Resolve list names per unique installation (one call each).
+        if (!refs.length && !listRefs.length) { render(); return; }
+        // Resolve list names per unique installation (one call each) — for detail labels.
         const listNameByInst = new Map<string, Map<string, string>>();
-        const uniqInst = [...new Set(refs.map(r => r.installId))];
+        const uniqInst = [...new Set([...refs.map(r => r.installId), ...listRefs.map(r => r.installId)])];
         await Promise.all(uniqInst.map(async inst => {
           try {
             const r = await fetch(`${baseUrl}/tasks/${inst}/lists`, apiOpts());
@@ -443,28 +465,40 @@ const factory: BlockFactory = (BaseBlockClass, _widgetApi) => {
             listNameByInst.set(inst, m);
           } catch (_) { /* names are optional */ }
         }));
+        const namesFor = (inst: string) => listNameByInst.get(inst) || new Map<string, string>();
 
-        tasks = await Promise.all(refs.map(async (r): Promise<Task> => {
-          const base: Task = { id: r.taskId, installId: r.installId, title: "", description: "", status: "",
-            dueDate: null, createDate: null, priority: "Priority_3", taskType: null, isRecurring: false,
-            auditSeverity: "", listId: "", listName: "", attachmentIds: [], ok: false };
+        // Individual tasks (by taskId).
+        const individual = await Promise.all(refs.map(async (r): Promise<Task | null> => {
           try {
             const res = await fetch(`${baseUrl}/tasks/${r.installId}/task/${r.taskId}`, apiOpts());
-            if (!res.ok) return base;
+            if (!res.ok) return null;
             const d = await res.json();
-            const desc = d.description || "";
-            const listId = d.taskListId || d.listId || "";
-            const listName = (listNameByInst.get(r.installId) || new Map()).get(listId) || "";
-            return {
-              id: d.id || r.taskId, installId: r.installId,
-              title: stripMarkers(d.title || "") || "(untitled)", description: desc,
-              status: d.status || "OPEN", dueDate: d.dueDate || null, createDate: d.createdAt || d.createDate || null,
-              priority: d.priority || "Priority_3", taskType: parseType(d.title || "") || parseType(desc),
-              isRecurring: RECUR_RE.test(desc) || RECUR_RE.test(d.title || ""), auditSeverity: d.auditSeverity || "",
-              listId, listName, attachmentIds: Array.isArray(d.attachmentIds) ? d.attachmentIds : [], ok: true,
-            };
-          } catch (_) { return base; }
+            return toTask({ ...d, id: d.id || r.taskId }, r.installId, namesFor(r.installId));
+          } catch (_) { return null; }
         }));
+
+        // Whole lists (by listId) — every task in the list.
+        const listed = await Promise.all(listRefs.map(async (lr): Promise<Task[]> => {
+          try {
+            const res = await fetch(`${baseUrl}/tasks/${lr.installId}/task?listId=${encodeURIComponent(lr.listId)}`, apiOpts());
+            if (!res.ok) return [];
+            const d = await res.json();
+            const arr: any[] = Array.isArray(d) ? d : (d.data || d.tasks || []);
+            return arr
+              .filter(t => t && t.id && !t.isArchived && t.taskType !== "audit-result")
+              .map(t => toTask(t, lr.installId, namesFor(lr.installId)));
+          } catch (_) { return []; }
+        }));
+
+        // Merge + dedupe by installId/taskId (individual refs win order).
+        const seen = new Set<string>();
+        const merged: Task[] = [];
+        for (const t of [...individual.filter((x): x is Task => !!x && x.ok), ...listed.flat()]) {
+          const key = `${t.installId}/${t.id}`;
+          if (seen.has(key)) continue;
+          seen.add(key); merged.push(t);
+        }
+        tasks = merged;
         render();
       }
 
@@ -477,9 +511,9 @@ const factory: BlockFactory = (BaseBlockClass, _widgetApi) => {
 const blockDefinition: BlockDefinition = {
   name: "task-selector-widget",
   label: "Task Selector",
-  attributes: ["apitoken", "baseurl", "tasklist", "title", "sortby", "primarycolor", "backgroundcolor", "limitheight", "maxheight"],
+  attributes: ["apitoken", "baseurl", "tasklist", "tasklists", "title", "sortby", "primarycolor", "backgroundcolor", "limitheight", "maxheight"],
   factory, configurationSchema, uiSchema, blockLevel: "block",
   iconUrl: "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxNzEgMTcxIj48Y2lyY2xlIGN4PSI4NS41IiBjeT0iODUuNSIgcj0iODUuNSIgZmlsbD0iI2RhMmUzMiIvPjxnIHRyYW5zZm9ybT0idHJhbnNsYXRlKDQzLjUgNDMuNSkgc2NhbGUoMy41KSIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjZmZmIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHBhdGggZD0iTTIxIDEwLjVWMTlhMiAyIDAgMCAxLTIgMkg1YTIgMiAwIDAgMS0yLTJWNWEyIDIgMCAwIDEgMi0yaDEyLjUiLz48cGF0aCBkPSJtOSAxMSAzIDNMMjIgNCIvPjwvZz48L3N2Zz4=",
 };
 
-window.defineBlock({ blockDefinition, author: "cdcruz-sbse", version: "1.1.0" } as ExternalBlockDefinition);
+window.defineBlock({ blockDefinition, author: "cdcruz-sbse", version: "1.2.0" } as ExternalBlockDefinition);
