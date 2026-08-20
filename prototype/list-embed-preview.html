@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Task Selector — list embed preview</title>
+<!-- Mock of the v1.2.0 behavior: config accepts BOTH individual tasks
+     (installationId/taskId) AND whole lists (installationId/listId). The widget
+     fetches every task in each list and merges + dedupes with individual tasks.
+     Edit either config box and watch the checklist update. -->
+<style>
+  :root{--primary:#da2e32;--primary-rgb:218,46,50;--primary-text:#fff;--success:#2E7D4A;--error:#C41E3A;
+    --dark:#1A1A1A;--gray:#6b7280;--gray-lt:#9ca3af;--border:#e5e7eb;--r-sm:6px;--r-md:10px;--r-lg:14px;
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;}
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:#f4f5f7;color:var(--dark);padding:20px;line-height:1.45;}
+  .cols{max-width:900px;margin:0 auto;display:grid;grid-template-columns:340px 1fr;gap:16px;align-items:start;}
+  @media(max-width:760px){.cols{grid-template-columns:1fr;}}
+  .panel{background:#fff;border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:0 1px 3px rgba(0,0,0,.05);overflow:hidden;}
+  .phead{padding:12px 15px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;}
+  .phead .dot{width:9px;height:9px;border-radius:50%;background:var(--primary);}
+  .phead h2{font-size:13px;font-weight:800;}
+  .phead .sub{margin-left:auto;font-size:10.5px;color:var(--gray-lt);font-weight:700;}
+  .pbody{padding:15px;}
+  .field{margin-bottom:12px;}
+  .field label{display:block;font-size:12px;font-weight:700;margin-bottom:5px;}
+  .field .help{font-size:11px;color:var(--gray-lt);margin-top:4px;}
+  textarea{width:100%;font-family:ui-monospace,Menlo,monospace;font-size:12px;padding:8px 10px;border:1.5px solid var(--border);
+    border-radius:var(--r-md);background:#fafafa;color:var(--dark);resize:vertical;}
+  textarea:focus{outline:none;border-color:var(--primary);background:#fff;}
+  .avail{margin-top:8px;font-size:11px;color:var(--gray);}
+  .avail code{background:#0f172a08;border:1px solid var(--border);border-radius:4px;padding:1px 5px;font-size:10.5px;}
+  .news-title{font-size:16px;font-weight:800;}
+  .news-count{font-size:12px;color:var(--gray-lt);font-weight:600;margin:2px 0 12px;}
+  .list{display:flex;flex-direction:column;gap:8px;}
+  .row{display:flex;align-items:flex-start;gap:12px;padding:11px 13px;background:#fff;border:1px solid var(--border);
+    border-radius:var(--r-md);box-shadow:0 1px 3px rgba(0,0,0,.05);transition:box-shadow .15s,transform .15s;cursor:pointer;}
+  .row:hover{box-shadow:0 4px 14px rgba(0,0,0,.09);transform:translateY(-1px);}
+  .row.done{opacity:.62;}
+  .check{width:22px;height:22px;border-radius:50%;border:2px solid #d1d5db;background:#fff;flex-shrink:0;display:flex;align-items:center;justify-content:center;}
+  .check.on{background:var(--success);border-color:var(--success);}
+  .check svg{display:none;}.check.on svg{display:block;}
+  .rmain{flex:1;min-width:0;}
+  .rtitle{font-size:14px;font-weight:600;line-height:1.45;}
+  .row.done .rtitle{color:var(--gray);text-decoration:line-through;}
+  .meta{display:flex;flex-wrap:wrap;align-items:center;gap:7px;margin-top:6px;}
+  .b{display:inline-flex;align-items:center;gap:4px;padding:2px 7px;border-radius:4px;font-size:9.5px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;}
+  .b-cat{color:#fff;}.b-recur{background:rgba(var(--primary-rgb),.1);color:var(--primary);}
+  .b-src{background:#eef2ff;color:#4338ca;}
+  .b-due{color:var(--gray-lt);font-weight:600;text-transform:none;letter-spacing:0;font-size:11px;}
+  .empty{padding:26px;text-align:center;color:var(--gray-lt);font-size:13px;}
+  .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%) translateY(20px);opacity:0;background:#0f172a;color:#fff;
+    font-size:12.5px;font-weight:600;padding:9px 14px;border-radius:999px;box-shadow:0 6px 24px rgba(0,0,0,.25);transition:all .25s;pointer-events:none;z-index:50;}
+  .toast.show{transform:translateX(-50%) translateY(0);opacity:1;}
+</style>
+</head>
+<body>
+<div class="cols">
+  <!-- config -->
+  <div class="panel">
+    <div class="phead"><span class="dot"></span><h2>Widget config (News editor)</h2><span class="sub">Studio</span></div>
+    <div class="pbody">
+      <div class="field">
+        <label>Selected task lists <span style="color:var(--gray-lt);font-weight:500">(installationId/listId)</span></label>
+        <textarea id="cfg-lists" rows="3"></textarea>
+        <div class="help">Embeds every task in the list — live. Copy a list ID from the Store Tasks widget.</div>
+      </div>
+      <div class="field">
+        <label>Selected tasks <span style="color:var(--gray-lt);font-weight:500">(installationId/taskId)</span></label>
+        <textarea id="cfg-tasks" rows="3"></textarea>
+        <div class="help">Individual tasks, merged with the lists above (deduped).</div>
+      </div>
+      <div class="avail" id="avail"></div>
+    </div>
+  </div>
+  <!-- published -->
+  <div class="panel">
+    <div class="phead"><span class="dot"></span><h2>Published News post</h2><span class="sub">employee view</span></div>
+    <div class="pbody">
+      <div class="news-title">Your store checklist</div>
+      <div class="news-count" id="count"></div>
+      <div class="list" id="list"></div>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+const CAT={storetask:"#da2e32",compliance:"#8B4513",safety:"#D97706",training:"#4A90A4",merchandising:"#7C3AED",inventory:"#0369A1",maintenance:"#2E7D4A"};
+const INST="store-demo-001";
+const LISTS={"list-open":"Store Opening Checklist","list-comp":"Compliance & Safety","list-merch":"Weekly Merchandising"};
+function d(n){const x=new Date();x.setDate(x.getDate()+n);return x.toISOString();}
+const TASKS=[
+ {id:"t01",listId:"list-open",title:"Unlock and disarm the store",type:"storetask",recur:true,prio:"Priority_1",status:"OPEN",due:d(0)},
+ {id:"t02",listId:"list-open",title:"Count and set the cash drawer",type:"storetask",recur:true,prio:"Priority_1",status:"OPEN",due:d(0)},
+ {id:"t03",listId:"list-open",title:"Power on POS terminals",type:"storetask",recur:true,prio:"Priority_2",status:"CLOSED",due:d(0)},
+ {id:"t11",listId:"list-open",title:"Walk the floor for safety hazards",type:"safety",recur:true,prio:"Priority_2",status:"OPEN",due:d(0)},
+ {id:"t04",listId:"list-comp",title:"Check walk-in freezer temperature log",type:"safety",recur:true,prio:"Priority_1",status:"OPEN",due:d(0)},
+ {id:"t05",listId:"list-comp",title:"Fire exit inspection",type:"compliance",recur:true,prio:"Priority_2",status:"OPEN",due:d(-1)},
+ {id:"t06",listId:"list-comp",title:"Complete monthly food-safety training",type:"training",recur:false,prio:"Priority_2",status:"OPEN",due:d(6)},
+ {id:"t12",listId:"list-comp",title:"Submit weekly compliance attestation",type:"compliance",recur:true,prio:"Priority_1",status:"OPEN",due:d(1)},
+];
+const PRI={Priority_1:"High",Priority_2:"Med",Priority_3:"Low"};
+const esc=s=>String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+const byId=id=>document.getElementById(id);
+const IC_CHECK='<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+const IC_RECUR='<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>';
+function parseRefs(txt){return (txt||"").split(/[\n,]+/).map(s=>s.trim()).filter(Boolean).map(l=>{const m=l.split(/[\/:]/).map(x=>x.trim()).filter(Boolean);return m.length>=2?{inst:m[0],id:m[1]}:null;}).filter(Boolean);}
+function fmtDue(iso){const dt=new Date(iso);dt.setHours(0,0,0,0);const n=new Date();n.setHours(0,0,0,0);return {text:dt.toLocaleDateString(undefined,{month:"short",day:"numeric"}),overdue:dt<n};}
+function build(){
+  const listRefs=parseRefs(byId("cfg-lists").value);   // installationId/listId
+  const taskRefs=parseRefs(byId("cfg-tasks").value);   // installationId/taskId
+  const seen=new Set(); const out=[];
+  // individual first (mirrors the widget's merge order)
+  taskRefs.forEach(r=>{const t=TASKS.find(x=>x.id===r.id);if(t&&!seen.has(t.id)){seen.add(t.id);out.push({...t,src:"individual"});}});
+  // then every task in each referenced list
+  listRefs.forEach(r=>{TASKS.filter(t=>t.listId===r.id).forEach(t=>{if(!seen.has(t.id)){seen.add(t.id);out.push({...t,src:LISTS[t.listId]||"list"});}});});
+  return out;
+}
+function render(){
+  const rows=build();
+  byId("count").textContent=rows.length?`${rows.length} task${rows.length!==1?"s":""}`:"";
+  const list=byId("list");
+  if(!rows.length){list.innerHTML=`<div class="empty">Nothing configured yet — add a list or task above.</div>`;return;}
+  list.innerHTML=rows.map(t=>{
+    const done=t.status==="CLOSED";const c=CAT[t.type]||"#6b7280";const due=fmtDue(t.due);
+    const m=[`<span class="b b-cat" style="background:${c}">${esc(t.type)}</span>`];
+    if(t.recur)m.push(`<span class="b b-recur">${IC_RECUR} Recurring</span>`);
+    if(t.prio!=="Priority_3")m.push(`<span class="b" style="border:1.5px solid ${t.prio==="Priority_1"?"#C41E3A":"#D97706"};color:${t.prio==="Priority_1"?"#C41E3A":"#D97706"}">${PRI[t.prio]}</span>`);
+    if(due.text)m.push(`<span class="b b-due">${due.overdue&&!done?"Overdue · ":"Due "}${esc(due.text)}</span>`);
+    m.push(`<span class="b b-src">${t.src==="individual"?"individual":"via "+esc(t.src)}</span>`);
+    return `<div class="row ${done?"done":""}" data-id="${t.id}"><button class="check ${done?"on":""}">${IC_CHECK}</button>
+      <div class="rmain"><span class="rtitle">${esc(t.title)}</span><div class="meta">${m.join("")}</div></div></div>`;
+  }).join("");
+  list.querySelectorAll(".row").forEach(row=>{
+    const t=TASKS.find(x=>x.id===row.dataset.id);
+    row.querySelector(".check").addEventListener("click",e=>{e.stopPropagation();t.status=t.status==="CLOSED"?"OPEN":"CLOSED";render();toast(t.status==="CLOSED"?"Marked complete ✓":"Reopened");});
+    row.addEventListener("click",()=>toast("In the widget this opens the task detail modal"));
+  });
+}
+let tT;function toast(m){const e=byId("toast");e.textContent=m;e.classList.add("show");clearTimeout(tT);tT=setTimeout(()=>e.classList.remove("show"),1500);}
+byId("avail").innerHTML="Available in this mock — lists: "+Object.keys(LISTS).map(l=>`<code>${INST}/${l}</code>`).join(" ")+" · a task: <code>"+INST+"/t06</code>";
+byId("cfg-lists").value=INST+"/list-open";
+byId("cfg-tasks").value=INST+"/t06";
+byId("cfg-lists").addEventListener("input",render);
+byId("cfg-tasks").addEventListener("input",render);
+render();
+</script>
+</body>
+</html>
